@@ -49,7 +49,7 @@ camera, full mobile, leaderboards backend, in-app content packs. See Phase 6+.
 
 ---
 
-## Phase 0 — Scaffolding & loop _(~0.5 day)_
+## Phase 0 — Scaffolding & loop _(~0.5 day)_ ✅ DONE
 
 Set up the machine so that future phases are pure feature work.
 
@@ -61,7 +61,10 @@ Set up the machine so that future phases are pure feature work.
 - Repo hygiene: `.gitignore`, git init, first commit. CI stub (lint+typecheck).
 
 **Exit criteria:** A box moves on screen driven by the keyboard; dev server
-hott reloads; `npm run test/build/lint` all pass on a trivial test.
+hott reloads; `npm run test/build/lint` all pass.  ✅ Achieved: typecheck clean,
+lint clean, 9 passing tests, prod build OK, dev server serves the app and
+transforms `main.ts`. Two real physics bugs were caught by the tests and fixed:
+brake could overshoot into reverse, and a parked car could spin.
 
 **Deliverable demo:** "the engine ticks and I can move a thing."
 
