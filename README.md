@@ -6,7 +6,7 @@ but with full-size RC cars (1/8, 1/10 buggies, brawlers, etc.) instead of a
 pocket racer.
 
 The core loop: **race → earn credits → upgrade / swap cars → take on harder
-tracks.** Depth comes from two places: a car that *feels* good to drive
+tracks.** Depth comes from two places: a car that _feels_ good to drive
 (traction, drift, weight, downforce), and a meaningful upgrade tree across many
 stats and many tracks.
 
@@ -18,19 +18,25 @@ for the phase-by-phase build path.
 
 ## Status
 
-Pre-scaffolding. No code yet. Stack decision and phase plan are finalized in
-`roadmap.md`. Next action: scaffold the project and implement **Phase 1
-(vertical slice of one drivable car on one track)**.
+Phase 0 complete: Vite + TypeScript + Vitest + ESLint + Prettier scaffold, a
+fixed-timestep game loop, and swappable `IInput` / `IRenderer` seams. A single
+car is drivable on an open field via a kinematic placeholder vehicle (to be
+replaced by Matter.js in Phase 1). All checks green: typecheck, lint, 9 tests,
+production build, and dev server.
+
+Next action: **Phase 1 — vertical slice**: integrate Matter.js so the car has
+real top-down traction/drift physics, and add a data-auth
+ored track with a lap timer.
 
 ## Why this stack (short version)
 
-| Layer        | Choice        | Why |
-|--------------|---------------|-----|
-| Language     | TypeScript    | Type safety across a large, data-driven game |
-| Build/dev    | Vite          | Fast HMR, tiny config, first-class TS |
-| Rendering    | Canvas 2D → (later) PixiJS/WebGL | Start simple & fast; clean seam to upgrade visuals |
-| Physics      | Matter.js     | Rigid-body + constraint car sim = realistic top-down traction/drift |
-| Save/data    | localStorage + JSON | No backend needed; upgrade catalog + save as data files |
-| UI/HUD       | Plain DOM + TS (later Svelte/Vue) | HUD/menus separate from the render loop |
+| Layer     | Choice                            | Why                                                                 |
+| --------- | --------------------------------- | ------------------------------------------------------------------- |
+| Language  | TypeScript                        | Type safety across a large, data-driven game                        |
+| Build/dev | Vite                              | Fast HMR, tiny config, first-class TS                               |
+| Rendering | Canvas 2D → (later) PixiJS/WebGL  | Start simple & fast; clean seam to upgrade visuals                  |
+| Physics   | Matter.js                         | Rigid-body + constraint car sim = realistic top-down traction/drift |
+| Save/data | localStorage + JSON               | No backend needed; upgrade catalog + save as data files             |
+| UI/HUD    | Plain DOM + TS (later Svelte/Vue) | HUD/menus separate from the render loop                             |
 
 Rationale and the alternatives considered are documented in `roadmap.md`.
