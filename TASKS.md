@@ -10,9 +10,9 @@ Generated from `roadmap.md` Phase 3 → Phase 4.
 - [x] Finish-line confetti burst
 - [x] Minimap overlay with car/track position
 - [x] Ghost-line visual render via `IRenderer.drawGhost` — confirm visibility in dev build
-- [~] Audio playback: WebAudio UI clicks/finish/lap chimes working; engine pitch ~ RPM deferred to Phase 4 polish
+- [x] Audio playback: WebAudio UI clicks/finish/lap chimes working; engine pitch ~ RPM added via continuous sawtooth hum
 - [x] Onboarding panel — 30s how-to: controls + earn → upgrade → go faster
-- [ ] Track visualizer / JSON import tool for authoring tracks without code
+- [~] Track visualizer / JSON import tool for authoring tracks without code — stub in place, full authoring UI deferred to Phase 5
 
 ### Headless-verified items already shipped
 - [x] 6 tracks in `tracks.ts` + 3rd car class 1/8 Brawler

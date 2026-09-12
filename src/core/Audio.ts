@@ -13,6 +13,8 @@ export interface IAudio {
   play(ev: SoundEvent, gain?: number): void;
   setMuted(muted: boolean): void;
   readonly muted: boolean;
+  /** Optional engine hum control for RPM-pitch simulation. */
+  setEngineSpeed?(norm: number): void;
 }
 
 /**
@@ -23,6 +25,8 @@ export interface IAudio {
 export class WebAudio implements IAudio {
   private ctx: AudioContext | null = null;
   muted = false;
+  private engineOsc: OscillatorNode | null = null;
+  private engineGain: GainNode | null = null;
 
   private ensure(): AudioContext | null {
     if (this.ctx !== null) return this.ctx;
