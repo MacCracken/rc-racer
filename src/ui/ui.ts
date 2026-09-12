@@ -7,7 +7,7 @@
 import type { StatBar } from "../game/upgrades.ts";
 import type { RaceOutcome } from "../game/progression.ts";
 
-export type Screen = "menu" | "garage" | "race" | "results";
+export type Screen = "menu" | "garage" | "race" | "results" | "onboarding";
 
 export interface CarRow {
   id: string;
@@ -123,7 +123,10 @@ export function menuHtml(m: UiModel): string {
        </div>
      </div>
      <div class="hint">WASD/arrows to drive · Space handbrake · R restart · Esc or Q to menu</div>
-     <button class="ghost" data-action="garage">Open garage</button>
+     <div class="menu-actions">
+       <button class="ghost" data-action="garage">Open garage</button>
+       <button class="ghost" data-action="howto">How to Play</button>
+     </div>
     </div>`;
 }
 
@@ -233,6 +236,25 @@ export function raceOverlay(): string {
     <div class="screen screen-race-overlay">
       <button class="ghost quit" data-action="quit">◀ Menu</button>
       <div class="hint race-hint">WASD / arrows · Space handbrake · R restart · Esc or Q to menu</div>
+    </div>`;
+}
+
+/** Onboarding / how-to screen. */
+export function onboardingHtml(): string {
+  return `
+    <div class="screen screen-onboarding">
+      <div class="onboarding-panel">
+        <div class="onboarding-title">How to Play — RC Racer</div>
+        <div class="onboarding-body">
+          <p><b>Drive:</b> WASD / Arrow keys to steer and throttle. Space for handbrake/drift. R to restart.</p>
+          <p><b>Race:</b> Complete laps, beat your best time and finish ahead of the AI rivals.</p>
+          <p><b>Earn → Upgrade → Go Faster:</b> Credits are awarded for finishing. Spend them in the Garage to upgrade Engine, Tires, Brakes, Suspension, Aero, Chassis and Drift Kit. Each upgrade changes real physics.</p>
+          <p><b>Progress:</b> Clear a track to unlock the next. Pick different car classes for different tracks.</p>
+        </div>
+        <div class="onboarding-actions">
+          <button class="primary" data-action="close-onboarding">Got it — Start Racing</button>
+        </div>
+      </div>
     </div>`;
 }
 

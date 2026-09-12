@@ -18,15 +18,15 @@ for the phase-by-phase build path.
 
 ## Status
 
-Phase 0 complete: Vite + TypeScript + Vitest + ESLint + Prettier scaffold, a
-fixed-timestep game loop, and swappable `IInput` / `IRenderer` seams. A single
-car is drivable on an open field via a kinematic placeholder vehicle (to be
-replaced by Matter.js in Phase 1). All checks green: typecheck, lint, 9 tests,
-production build, and dev server.
+Phase 0 ✅ Scaffolding & loop — Vite + TypeScript + Vitest + ESLint + Prettier, fixed-timestep loop, `IInput` / `IRenderer` seams.
 
-Next action: **Phase 1 — vertical slice**: integrate Matter.js so the car has
-real top-down traction/drift physics, and add a data-auth
-ored track with a lap timer.
+Phase 1 ✅ Vertical slice — Matter.js top-down car with traction/drift, data-authored tracks, look-ahead camera, HUD, lap timer. 3 tracks, `tuning.ts` Vehicle Model, 17 unit tests.
+
+Phase 2 ✅ Progression loop — stats/upgrades data-driven, credits economy, versioned localStorage save, `Progression` orchestrator, AI autopilot, multi-car arena, menu/garage/results UI. Headless proof shows upgrades make you faster.
+
+Phase 3 🚧 IN PROGRESS — Content scale + polish. Shipped & headless-verified: 6 tracks, 3 car classes incl. 1/8 Brawler, content QA guard, skid marks model, audio event seam, ghost replay + save v2 migration, fixed camera follow. Remaining for browser confirmation: curved curbs, tire smoke, finish confetti, minimap, ghost-line visual render, WebAudio playback, onboarding how-to, track visualizer/JSON import.
+
+Next action: **Finish Phase 3 visual/juice in-browser, then Phase 4 — tuning pass, 60fps perf, input remap, accessibility, production build & public demo URL.**
 
 ## Why this stack (short version)
 
