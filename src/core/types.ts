@@ -28,6 +28,8 @@ export interface RenderScene {
   skidMarks?: SkidMark[];
   /** The player's previous best-lap ghost, to chase. */
   ghost?: import("../race/Ghost.ts").Ghost;
+  /** ms since race finished; >0 triggers confetti. */
+  confettiAgeMs?: number;
 }
 
 export interface IRenderer {

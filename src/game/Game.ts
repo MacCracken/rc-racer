@@ -112,6 +112,7 @@ export class Game {
   private audio: IAudio;
   private prevLap = 0;
   private ghost: Ghost = [];
+  private confettiStartMs = 0;
 
   constructor(
     public readonly prog: Progression,
@@ -350,6 +351,7 @@ export class Game {
   private finalizeRace(): void {
     this.finished = true;
     this.audio.play("finish");
+    this.confettiStartMs = this.clockMs;
     const outcome = this.prog.recordRace({
       trackId: this.currentTrack().id,
       carId: this.prog.selectedCarId,
@@ -396,6 +398,7 @@ export class Game {
       total: this.arena.cars.length,
       skidMarks: this.skid.marks,
       ghost: this.ghost,
+      confettiAgeMs: this.confettiStartMs ? this.clockMs - this.confettiStartMs : undefined,
     };
     this.renderer.render(scene);
   }

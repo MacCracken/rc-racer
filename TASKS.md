@@ -5,9 +5,9 @@ Generated from `roadmap.md` Phase 3 → Phase 4.
 ## Phase 3 — Content scale + polish  🚧 IN PROGRESS
 
 ### Visual / Juice — needs browser run
-- [ ] Curved curbs rendering on track edges
+- [x] Curved curbs rendering on track edges
 - [ ] Tire smoke decals on hard drift
-- [ ] Finish-line confetti burst
+- [x] Finish-line confetti burst
 - [x] Minimap overlay with car/track position
 - [ ] Ghost-line visual render via `IRenderer.drawGhost` — confirm visibility in dev build
 - [ ] Audio playback: WebAudio engine pitch ~ RPM, UI clicks, finish chime via `core/Audio.ts`

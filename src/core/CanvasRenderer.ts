@@ -48,6 +48,7 @@ export class Canvas2DRenderer implements IRenderer {
       total,
       skidMarks,
       ghost,
+      confettiAgeMs,
     } = scene;
     const w = this.canvas.width / this.dpr;
     const h = this.canvas.height / this.dpr;
@@ -72,6 +73,9 @@ export class Canvas2DRenderer implements IRenderer {
       total,
       car,
     );
+    if (confettiAgeMs !== undefined && confettiAgeMs >= 0) {
+      this.drawConfetti(this.ctx, w, h, confettiAgeMs);
+    }
   }
 
   // --- world-space rendering ---
@@ -157,11 +161,13 @@ export class Canvas2DRenderer implements IRenderer {
   private strokeCurb(pts: { x: number; y: number }[], cam: Camera): void {
     const { ctx } = this;
     ctx.save();
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
     ctx.lineWidth = 10;
     ctx.strokeStyle = "#b23a3a";
     this.tracePolygon(pts, cam, true);
     ctx.stroke();
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 5;
     ctx.setLineDash([18, 18]);
     ctx.lineDashOffset = 0;
     ctx.strokeStyle = "#f4f4f4";
@@ -374,6 +380,23 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.beginPath();
     ctx.arc(px, py, 3, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  private drawConfetti(ctx: CanvasRenderingContext2D, w: number, h: number, ageMs: number): void {
+    const duration = 1200;
+    if (ageMs > duration) return;
+    const t = ageMs / duration;
+    ctx.save();
+    ctx.globalAlpha = 1 - t;
+    const count = 80;
+    for (let i = 0; i < count; i++) {
+      const x = w * 0.5 + (Math.random() - 0.5) * w * 0.8 * t;
+      const y = h * 0.3 + Math.random() * h * 0.5 * t;
+      const size = 4 + Math.random() * 4;
+      ctx.fillStyle = `hsl(${(i * 137.5) % 360}, 90%, 65%)`;
+      ctx.fillRect(x, y, size, size * 0.6);
+    }
+    ctx.restore();
   }
 
   // --- geometry helpers ---
