@@ -37,6 +37,8 @@ const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
  */
 export class KeyboardInput implements IInput {
   private readonly held = new Set<string>();
+  /** The element listeners attach to, so detach() matches attach(). */
+  private target: HTMLElement | null = null;
   private readonly onDown: (e: KeyboardEvent) => void;
   private readonly onUp: (e: KeyboardEvent) => void;
 
@@ -51,14 +53,16 @@ export class KeyboardInput implements IInput {
   }
 
   attach(target: HTMLElement): void {
+    this.target = target;
     target.addEventListener("keydown", this.onDown);
     target.addEventListener("keyup", this.onUp);
     target.tabIndex = 0;
   }
 
   detach(): void {
-    window.removeEventListener("keydown", this.onDown);
-    window.removeEventListener("keyup", this.onUp);
+    this.target?.removeEventListener("keydown", this.onDown);
+    this.target?.removeEventListener("keyup", this.onUp);
+    this.target = null;
   }
 
   sample(): InputState {

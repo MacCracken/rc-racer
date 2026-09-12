@@ -172,7 +172,7 @@ export class Game {
     const delta = (nowMs - this.lastFrameMs) / 1000;
     this.lastFrameMs = nowMs;
     this.loop.update(delta);
-    this.renderScene(nowMs);
+    this.renderScene();
     this.frameHandle = requestAnimationFrame((t) => this.frame(t));
   }
 
@@ -236,6 +236,14 @@ export class Game {
   }
 
   private startRace(): void {
+    // Release focus from the button we just clicked so keyboard goes
+    // straight to driving instead of re-activating a focused control
+    // (e.g. Space otherwise double-fires the Start button).
+    if (
+      typeof document !== "undefined" &&
+      document.activeElement instanceof HTMLElement
+    )
+      document.activeElement.blur();
     const track = buildTrack(this.currentTrack());
     const stats = this.currentStats();
     const paces = Array.from({ length: this.rivals }, (_, i) => {
@@ -369,7 +377,7 @@ export class Game {
 
   // --- rendering -------------------------------------------------------
 
-  private renderScene(nowMs: number): void {
+  private renderScene(): void {
     const p = this.arena.cars[0]!;
     const scene: RenderScene = {
       camera: this.camera,
@@ -377,7 +385,7 @@ export class Game {
       car: p.body,
       race: this.playerRace,
       speed: forwardSpeed(p.body),
-      nowMs,
+      nowMs: this.clockMs,
       rivals: this.arena.cars.filter((c) => !c.isPlayer).map((c) => c.body),
       position: this.playerPosition(),
       total: this.arena.cars.length,
