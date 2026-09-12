@@ -284,6 +284,12 @@ _Deliberately deferred to the browser-run polish (not headless-verifiable):_
   all shipped + tested; only the on-screen/audible presentation is un-confirmed
   here and folds into Phase 4 once a browser is in play. A track editor / JSON
   authoring tool and onboarding how-to text remain on the list too.
+- **Eyeball-found bug, fixed during a browser run:** the camera was set to the
+  start line _once_ and then frozen, so the car drove off a fixed window and
+  only half the track stayed on screen. `followCamera(dt)` now lerps the view
+  behind the player every step (with a small look-ahead along the velocity),
+  guarded by `test/Camera.test.ts` (convergence + a pinned "frozen camera
+  drifts away" regression).
 
 ---
 
