@@ -6,11 +6,11 @@ Generated from `roadmap.md` Phase 3 → Phase 4.
 
 ### Visual / Juice — needs browser run
 - [x] Curved curbs rendering on track edges
-- [ ] Tire smoke decals on hard drift
+- [x] Tire smoke decals on hard drift
 - [x] Finish-line confetti burst
 - [x] Minimap overlay with car/track position
-- [ ] Ghost-line visual render via `IRenderer.drawGhost` — confirm visibility in dev build
-- [ ] Audio playback: WebAudio engine pitch ~ RPM, UI clicks, finish chime via `core/Audio.ts`
+- [x] Ghost-line visual render via `IRenderer.drawGhost` — confirm visibility in dev build
+- [~] Audio playback: WebAudio UI clicks/finish/lap chimes working; engine pitch ~ RPM deferred to Phase 4 polish
 - [x] Onboarding panel — 30s how-to: controls + earn → upgrade → go faster
 - [ ] Track visualizer / JSON import tool for authoring tracks without code
 

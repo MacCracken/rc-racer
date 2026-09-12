@@ -153,6 +153,15 @@ export class Canvas2DRenderer implements IRenderer {
       ctx.moveTo(p.x - dx, p.y - dy);
       ctx.lineTo(p.x + dx, p.y + dy);
       ctx.stroke();
+
+      // tire smoke puff
+      if (m.alpha > 0.5) {
+        ctx.globalAlpha = m.alpha * 0.12;
+        ctx.fillStyle = "#222";
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, width * 2, width, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.globalAlpha = 1;
     ctx.restore();
