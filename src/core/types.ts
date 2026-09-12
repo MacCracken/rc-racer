@@ -26,6 +26,8 @@ export interface RenderScene {
   total?: number;
   /** Decaying tire-skid trail drawn on the asphalt under the cars. */
   skidMarks?: SkidMark[];
+  /** The player's previous best-lap ghost, to chase. */
+  ghost?: import("../race/Ghost.ts").Ghost;
 }
 
 export interface IRenderer {

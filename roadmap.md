@@ -267,14 +267,23 @@ _Shipped & headless-verified:_
   oscillator per event in a browser and degrades to a no-op headless; `NullAudio`
   records events for tests. The _audible_ output is the one part that genuinely
   needs a browser — only the event model is verified here.
+- **Ghost-line replay + a versioned save.** A pure `Ghost` module records a best
+  lap as (t, x, y, heading) samples and replays them through `sampleGhost`
+  (bilinear interp + clamp). `RaceState` now captures the best-lap timeline, and
+  a chaseable best-line overlay is wired through the `IRenderer` seam
+  (`drawGhost`). The save schema _bumped to v2_ with a `bestGhosts` field, so
+  `migrate()` now defends a v1 save — that retires the "save-migration path
+  tested" item (`SaveMigrate.test.ts` proves a v1 save loads, corrupt ghosts are
+  repaired, and a new record stores its ghost). `_Content.test.ts`_ also asserts
+  a full race yields a non-empty, time-ascending ghost.
 
 _Deliberately deferred to the browser-run polish (not headless-verifiable):_
 
-- Curved curbs, tire smoke, finish confetti, ghost line from best lap, minimap,
-  and the actual _sound_ of the audio seam. These are visual/juice only and
-  need a screen to verify — they fold into Phase 4 once a browser is in play. Track
-  editor / JSON authoring tool, onboarding how-to text, and a tested save-
-  migration path are also still on the Phase 3→4 list.
+- Curved curbs, tire smoke, finish confetti, minimap, **and the _visual_ render
+  of the ghost-line + the _sound_ the audio seam fires** — the data/models are
+  all shipped + tested; only the on-screen/audible presentation is un-confirmed
+  here and folds into Phase 4 once a browser is in play. A track editor / JSON
+  authoring tool and onboarding how-to text remain on the list too.
 
 ---
 

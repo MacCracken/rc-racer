@@ -38,6 +38,7 @@ import {
   ageMarks,
   type SkidState,
 } from "../core/SkidMarks.ts";
+import type { Ghost } from "../race/Ghost.ts";
 import { CAR_LENGTH, CAR_WIDTH } from "../core/tuning.ts";
 import {
   menuHtml,
@@ -107,6 +108,7 @@ export class Game {
   private skid: SkidState;
   private audio: IAudio;
   private prevLap = 0;
+  private ghost: Ghost = [];
 
   constructor(
     public readonly prog: Progression,
@@ -221,6 +223,7 @@ export class Game {
       return Math.min(0.98, base + (i - 1) * 0.05);
     });
     this.arena = createArena(track, stats, paces);
+    this.ghost = this.prog.ghostFor(track.def.id);
     this.playerRace = new RaceState(this.arena.track, () => this.clockMs);
     this.racers = [];
     for (const c of this.arena.cars) {
@@ -303,6 +306,7 @@ export class Game {
       carId: this.prog.selectedCarId,
       laps: this.playerRace.lap,
       bestLapMs: this.playerRace.bestLapMs,
+      bestLapGhost: this.playerRace.bestGhost,
       finished: true,
     });
     this.lastResults = {
@@ -342,6 +346,7 @@ export class Game {
       position: this.playerPosition(),
       total: this.arena.cars.length,
       skidMarks: this.skid.marks,
+      ghost: this.ghost,
     };
     this.renderer.render(scene);
   }

@@ -4,6 +4,7 @@ import type { IRenderer, RenderScene } from "./types.ts";
 import type { BuiltTrack, TrackDef } from "../track/Track.ts";
 import type { RaceState } from "../race/RaceState.ts";
 import type { SkidMark } from "./SkidMarks.ts";
+import type { Ghost } from "../race/Ghost.ts";
 import { CAR_LENGTH, CAR_WIDTH } from "./tuning.ts";
 import { formatLap, currentLapTimeMs } from "../race/RaceState.ts";
 
@@ -46,6 +47,7 @@ export class Canvas2DRenderer implements IRenderer {
       position,
       total,
       skidMarks,
+      ghost,
     } = scene;
     const w = this.canvas.width / this.dpr;
     const h = this.canvas.height / this.dpr;
@@ -54,6 +56,7 @@ export class Canvas2DRenderer implements IRenderer {
     this.drawBackground(track.def, w, h);
     this.drawTrack(track, camera);
     this.drawSkidMarks(skidMarks, camera);
+    this.drawGhost(ghost, camera);
     this.drawNextGate(track, camera, race);
     this.drawRivals(rivals, camera);
     this.drawCar(car, camera);
@@ -103,6 +106,30 @@ export class Canvas2DRenderer implements IRenderer {
    * Draw the skid trail on the asphalt, under the cars. Each mark is a short
    * dark segment oriented with the car's heading, fading with its alpha.
    */
+  /** Faded best-line overlay the player can chase; cosmetic only. */
+  private drawGhost(ghost: Ghost | undefined, cam: Camera): void {
+    if (ghost === undefined || ghost.length < 2) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.lineWidth = Math.max(2, 5 * cam.zoom);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(90, 200, 255, 0.45)";
+    ctx.beginPath();
+    let started = false;
+    for (const g of ghost) {
+      const sp = cam.toScreen({ x: g.x, y: g.y });
+      if (!started) {
+        ctx.moveTo(sp.x, sp.y);
+        started = true;
+      } else {
+        ctx.lineTo(sp.x, sp.y);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   private drawSkidMarks(marks: SkidMark[] | undefined, cam: Camera): void {
     if (marks === undefined || marks.length === 0) return;
     const { ctx } = this;

@@ -1,0 +1,92 @@
+/**
+ * Ghost line — a recording of a car's best lap, replayable as a "ghost" the
+ * player can chase. Built from per-lap (t, x, y, heading) samples; replayed by
+ * `sampleGhost`, which linearly interpolates a pose at any lap-relative time.
+ * Pure math, so it's fully unit-testable without a screen. The *drawing* of a
+ * ghost is a renderer concern and un-verifiable headless; this module is the
+ * testable data + lookup that feeds it.
+ */
+
+/** One recorded frame: lap-relative time (ms) and the car's pose. */
+export interface GhostPoint {
+  t: number;
+  x: number;
+  y: number;
+  heading: number;
+}
+
+export type Ghost = GhostPoint[];
+
+/** Build a ghost from arbitrary samples: sort by time, drop dupes. */
+export function makeGhost(points: GhostPoint[]): Ghost {
+  const sorted = [...points].sort((a, b) => a.t - b.t);
+  const out: Ghost = [];
+  let last = -Infinity;
+  for (const p of sorted) {
+    if (p.t !== last) {
+      out.push({ t: p.t, x: p.x, y: p.y, heading: p.heading });
+      last = p.t;
+    }
+  }
+  return out;
+}
+
+export interface Pose {
+  x: number;
+  y: number;
+  heading: number;
+}
+
+/**
+ * Replayed pose at lap-relative time `t`, linearly interpolated between the two
+ * bracketing frames. Clamps to the ends outside the recorded span. Returns null
+ * for an empty ghost. `x`/`y` are the visual-critical values (precise);
+ * `heading` takes the nearest frame's — fine for a demo, trivially correct.
+ */
+export function sampleGhost(g: Ghost, t: number): Pose | null {
+  if (g.length === 0) return null;
+  if (g.length === 1) return { x: g[0].x, y: g[0].y, heading: g[0].heading };
+  if (t <= g[0].t) return poseFrom(g[0]);
+  if (t >= g[g.length - 1].t) return poseFrom(g[g.length - 1]);
+
+  // Binary search for the [lo, hi] bracket with g[lo].t <= t < g[hi].t.
+  let lo = 0;
+  let hi = g.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (g[mid].t <= t) lo = mid;
+    else hi = mid;
+  }
+  const a = g[lo];
+  const b = g[hi];
+  const f = (t - a.t) / (b.t - a.t || 1);
+  return {
+    x: a.x + (b.x - a.x) * f,
+    y: a.y + (b.y - a.y) * f,
+    // nearest (lower) frame keeps heading stable and the math exact.
+    heading: a.heading,
+  };
+}
+
+function poseFrom(p: GhostPoint): Pose {
+  return { x: p.x, y: p.y, heading: p.heading };
+}
+
+/**
+ * Build a ghost from a single lap's samples. `startMs` is the lap's origin so
+ * times become lap-relative. Samples at or before `startMs` are dropped.
+ */
+export function recordLap(
+  samples: { ms: number; x: number; y: number; dx: number; dy: number }[],
+  startMs: number,
+): Ghost {
+  const pts: GhostPoint[] = [];
+  let lastHeading = 0;
+  for (const s of samples) {
+    const t = s.ms - startMs;
+    if (t < 0) continue;
+    lastHeading = (s.dx || s.dy) !== 0 ? Math.atan2(s.dy, s.dx) : lastHeading;
+    pts.push({ t, x: s.x, y: s.y, heading: lastHeading });
+  }
+  return makeGhost(pts);
+}

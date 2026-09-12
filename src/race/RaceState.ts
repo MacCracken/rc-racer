@@ -1,4 +1,5 @@
 import { type Vec2, segmentsIntersect } from "../core/vec.ts";
+import { recordLap, type Ghost } from "./Ghost.ts";
 import type { BuiltTrack } from "../track/Track.ts";
 
 /**
@@ -15,6 +16,16 @@ export class RaceState {
   lapStartMs: number;
   lastLapMs = 0;
   bestLapMs = Infinity;
+  /** The car's best-lap pose timeline, for a ghost the player can chase. */
+  bestGhost: Ghost = [];
+  /** Raw per-step pose samples for the lap in progress; promoted on a new best. */
+  private lapSamples: {
+    ms: number;
+    x: number;
+    y: number;
+    dx: number;
+    dy: number;
+  }[] = [];
   lapTimesMs: number[] = [];
   finished = false;
   /** ms into the current lap, for the HUD. */
@@ -38,6 +49,13 @@ export class RaceState {
     if (!this.started && Math.hypot(cur.x - prev.x, cur.y - prev.y) > 1.5) {
       this.started = true;
     }
+    this.lapSamples.push({
+      ms: this.now(),
+      x: cur.x,
+      y: cur.y,
+      dx: cur.x - prev.x,
+      dy: cur.y - prev.y,
+    });
     const gate = this.track.gates[this.nextGate];
     if (gate === undefined) return;
 
@@ -51,7 +69,12 @@ export class RaceState {
       const t = this.now() - this.lapStartMs;
       this.lastLapMs = t;
       this.lapTimesMs.push(t);
-      this.bestLapMs = Math.min(this.bestLapMs, t);
+      const isBest = t < this.bestLapMs; // Infinity on the first lap
+      if (isBest) {
+        this.bestLapMs = t;
+        this.bestGhost = recordLap(this.lapSamples, this.lapStartMs);
+      }
+      this.lapSamples = [];
       this.lapStartMs = this.now();
       this.lap += 1;
       this.nextGate = 1 % this.track.gates.length;

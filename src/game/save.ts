@@ -1,6 +1,7 @@
 import { freshUpgrades, type OwnedUpgrades } from "./upgrades.ts";
 import { carClasses } from "./cars.ts";
 import { tracks } from "../track/tracks.ts";
+import type { Ghost, GhostPoint } from "../race/Ghost.ts";
 
 /**
  * A save is a small, versioned snapshot. `version` + `migrate()` let us change the
@@ -8,7 +9,7 @@ import { tracks } from "../track/tracks.ts";
  * (ISaveStore) so the pure logic (migrate/newSave/serialize) is testable away
  * from the browser, with a LocalStorage implementation for the real game.
  */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export interface SaveData {
   version: number;
@@ -19,6 +20,7 @@ export interface SaveData {
   upgrades: Record<string, OwnedUpgrades>;
   /** Best lap ms per track id (the race's best single lap). */
   bestLaps: Record<string, number>;
+  bestGhosts: Record<string, Ghost>;
   /** Selectable screen selections, for convenience. */
   selectedCar: string;
   selectedTrack: string;
@@ -40,6 +42,7 @@ export function newSave(): SaveData {
     ownedCars: [firstCar.id],
     upgrades: { [firstCar.id]: freshUpgrades() },
     bestLaps: {},
+    bestGhosts: {},
     selectedCar: firstCar.id,
     selectedTrack: tracks[0].id,
     clearedTracks: [],
@@ -79,6 +82,14 @@ export function migrate(input: unknown): SaveData {
       if (typeof ms === "number" && isFinite(ms)) data.bestLaps[t] = ms;
     }
   }
+  if (raw.bestGhosts && typeof raw.bestGhosts === "object") {
+    for (const [t, pts] of Object.entries(
+      raw.bestGhosts as Record<string, unknown>,
+    )) {
+      if (Array.isArray(pts)) data.bestGhosts[t] = coerceGhost(pts);
+    }
+  }
+
   if (raw.clearedTracks && Array.isArray(raw.clearedTracks)) {
     data.clearedTracks = raw.clearedTracks.filter(
       (t): t is string =>
@@ -101,6 +112,36 @@ export function migrate(input: unknown): SaveData {
   }
   data.version = SAVE_VERSION;
   return data;
+}
+
+/** Coerce arbitrary data into a clean, ascending, deduped ghost timeline. */
+function coerceGhost(raw: unknown): GhostPoint[] {
+  if (!Array.isArray(raw)) return [];
+  const out: GhostPoint[] = [];
+  let last = -Infinity;
+  for (const pt of raw) {
+    if (pt === null || typeof pt !== "object") continue;
+    const q = pt as Record<string, unknown>;
+    const { t, x, y, heading } = q;
+    if (
+      typeof t !== "number" ||
+      typeof x !== "number" ||
+      typeof y !== "number" ||
+      !Number.isFinite(t) ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(y)
+    )
+      continue;
+    if (t === last) continue;
+    out.push({
+      t,
+      x,
+      y,
+      heading: typeof heading === "number" ? heading : 0,
+    });
+    last = t;
+  }
+  return out.sort((a, b) => a.t - b.t);
 }
 
 /** Browser-backed store with a guard so a full/blocked storage never throws. */

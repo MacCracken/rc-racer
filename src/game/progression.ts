@@ -10,6 +10,7 @@ import { newSave, migrate, type SaveData, type ISaveStore } from "./save.ts";
 import { carById, carClasses, freshBase } from "./cars.ts";
 import { tracks } from "../track/tracks.ts";
 import type { CarStats } from "../core/tuning.ts";
+import type { Ghost } from "../race/Ghost.ts";
 
 export interface RaceResult {
   trackId: string;
@@ -17,6 +18,7 @@ export interface RaceResult {
   laps: number;
   bestLapMs: number;
   finished: boolean;
+  bestLapGhost?: Ghost;
 }
 
 export interface RaceOutcome {
@@ -122,6 +124,11 @@ export class Progression {
     return this.data.bestLaps[trackId] ?? Infinity;
   }
 
+  /** The best-lap ghost for a track, or empty if none recorded yet. */
+  ghostFor(trackId: string): Ghost {
+    return this.data.bestGhosts[trackId] ?? [];
+  }
+
   isTrackCleared(trackId: string): boolean {
     return this.data.clearedTracks.includes(trackId);
   }
@@ -155,7 +162,11 @@ export class Progression {
     if (result.finished) creditsEarned = computeReward(input);
     this.data.credits += creditsEarned;
 
-    if (beat) this.data.bestLaps[result.trackId] = newBest;
+    if (beat) {
+      this.data.bestLaps[result.trackId] = newBest;
+      if (result.bestLapGhost !== undefined)
+        this.data.bestGhosts[result.trackId] = result.bestLapGhost;
+    }
     if (result.finished && !this.isTrackCleared(result.trackId)) {
       this.data.clearedTracks.push(result.trackId);
     }

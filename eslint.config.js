@@ -5,7 +5,13 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "node_modules", "*.config.js", "package-lock.json"],
+    ignores: [
+      "dist",
+      "node_modules",
+      "*.config.js",
+      "package-lock.json",
+      "scripts/_*",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

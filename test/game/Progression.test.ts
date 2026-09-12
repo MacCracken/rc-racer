@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Progression } from "../../src/game/progression.ts";
 import { MemorySaveStore, newSave, migrate } from "../../src/game/save.ts";
+import { recordLap } from "../../src/race/Ghost.ts";
 
 describe("Progression — earn / spend / record", () => {
   it("awards credits for a finished race and beats a record", () => {
@@ -18,6 +19,46 @@ describe("Progression — earn / spend / record", () => {
     expect(out.newRecord).toBe(true);
     expect(p.isTrackCleared("overture")).toBe(true);
     expect(p.bestLap("overture")).toBe(4000);
+  });
+
+  it("stores the best-lap ghost on a new record", () => {
+    const p = Progression.fresh();
+    const ghost = recordLap(
+      [
+        { ms: 0, x: 0, y: 0, dx: 1, dy: 0 },
+        { ms: 100, x: 10, y: 0, dx: 1, dy: 0 },
+        { ms: 200, x: 20, y: 0, dx: 1, dy: 0 },
+      ],
+      0,
+    );
+    expect(ghost.length).toBe(3);
+    const out = p.recordRace({
+      trackId: "overture",
+      carId: p.selectedCarId,
+      laps: 3,
+      bestLapMs: 4000,
+      finished: true,
+      bestLapGhost: ghost,
+    });
+    expect(out.newRecord).toBe(true);
+    expect(p.ghostFor("overture").length).toBe(3);
+    // A slower lap must not clobber the stored ghost.
+    const slower = recordLap(
+      [
+        { ms: 0, x: 0, y: 0, dx: 1, dy: 0 },
+        { ms: 80, x: 6, y: 0, dx: 1, dy: 0 },
+      ],
+      0,
+    );
+    p.recordRace({
+      trackId: "overture",
+      carId: "x",
+      laps: 3,
+      bestLapMs: 9000,
+      finished: true,
+      bestLapGhost: slower,
+    });
+    expect(p.ghostFor("overture").length).toBe(3);
   });
 
   it("does not beat an existing record with a slower lap, but still pays", () => {

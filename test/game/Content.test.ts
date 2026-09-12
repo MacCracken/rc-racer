@@ -7,6 +7,7 @@ import { makeDriver } from "../../src/race/AiDriver.ts";
 import { FIXED_DT } from "../../src/core/tuning.ts";
 import { applyBuild, freshUpgrades } from "../../src/game/upgrades.ts";
 import { carClasses } from "../../src/game/cars.ts";
+import { sampleGhost } from "../../src/race/Ghost.ts";
 
 /**
  * Content QA. New tracks/cars are *data*, not code — so we protect that data:
@@ -95,5 +96,38 @@ describe("Content catalog — tracks are drivable, cars are distinct", () => {
         expect(isFinite(v), `${c.id} has a non-finite stat`).toBe(true);
       }
     }
+  });
+  it("a full race records a non-empty, time-ascending ghost", () => {
+    const def = tracks[0];
+    const track = buildTrack(def);
+    const world = createCarWorld(track);
+    const car = world.car;
+    let clockMs = 0;
+    const race = new RaceState(track, () => clockMs);
+    const driver = makeDriver(track, {
+      pace: def.aiPace ?? 0.8,
+      lookahead: 0.05,
+    });
+    const dt = FIXED_DT;
+    let prev = { x: car.position.x, y: car.position.y };
+    const cap = Math.ceil(40 / dt);
+    for (let s = 0; s < cap && !race.finished; s++) {
+      const input = driver({
+        position: car.position,
+        velocity: car.velocity,
+        angle: car.angle,
+      });
+      stepCar(car, world.walls, track, input, sedanStats, dt);
+      const cur = { x: car.position.x, y: car.position.y };
+      race.update(prev, cur);
+      prev = cur;
+      clockMs += dt * 1000;
+    }
+    const g = race.bestGhost;
+    expect(g.length).toBeGreaterThan(1);
+    for (let i = 1; i < g.length; i++)
+      expect(g[i].t).toBeGreaterThanOrEqual(g[i - 1].t);
+    const mid = sampleGhost(g, g[Math.floor(g.length / 2)].t);
+    expect(mid).not.toBeNull();
   });
 });
