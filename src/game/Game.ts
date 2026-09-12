@@ -31,6 +31,14 @@ import {
 } from "./upgrades.ts";
 import type { ISaveStore, SaveData } from "./save.ts";
 import type { IRenderer, RenderScene } from "../core/types.ts";
+import { createAudio, type IAudio } from "../core/Audio.ts";
+import {
+  createSkid,
+  sampleDrift,
+  ageMarks,
+  type SkidState,
+} from "../core/SkidMarks.ts";
+import { CAR_LENGTH, CAR_WIDTH } from "../core/tuning.ts";
 import {
   menuHtml,
   garageHtml,
@@ -66,6 +74,8 @@ export interface GameDeps {
   store?: ISaveStore;
   /** Number of AI rivals per race. */
   rivals?: number;
+  /** Audio seam; defaults to an environment-aware impl (silent headless). */
+  audio?: IAudio;
   carClasses?: CarClass[];
   tracks?: TrackDef[];
 }
@@ -94,6 +104,9 @@ export class Game {
 
   private onClickBound: (e: Event) => void;
   private prevMap = new Map<object, Vec2>();
+  private skid: SkidState;
+  private audio: IAudio;
+  private prevLap = 0;
 
   constructor(
     public readonly prog: Progression,
@@ -115,6 +128,9 @@ export class Game {
     this.loop = new FixedTimestepLoop(1 / 120, (dt) => this.onStep(dt));
 
     this.onClickBound = (e: Event) => this.onClick(e);
+
+    this.skid = createSkid();
+    this.audio = deps.audio ?? createAudio();
 
     // Preview arena so the first render has something to draw.
     this.arena = createArena(
@@ -219,6 +235,8 @@ export class Game {
     this.finished = false;
     this.lastResults = null;
     this.clockMs = 0;
+    this.skid = createSkid();
+    this.prevLap = 0;
     this.screen = "race";
     this.uiRoot.innerHTML = "";
     const p = this.arena.cars[0]!;
@@ -238,6 +256,14 @@ export class Game {
     this.stepBody(p, this.input.sample(), dt);
     this.playerRace.update(this.prevOf(p.body), p.body.position);
 
+    // Tire-smoke trail: lay skids while the player slides, fade them over time.
+    sampleDrift(this.skid, p.body, {
+      carLength: CAR_LENGTH,
+      carWidth: CAR_WIDTH,
+      maxSpeed: p.stats.maxSpeed,
+    });
+    ageMarks(this.skid, dt);
+
     // Rivals.
     for (const r of this.racers) {
       const inp = r.driver({
@@ -250,6 +276,10 @@ export class Game {
       r.prev = { x: r.car.body.position.x, y: r.car.body.position.y };
     }
 
+    if (this.playerRace.lap > this.prevLap) {
+      this.audio.play("lap");
+      this.prevLap = this.playerRace.lap;
+    }
     if (this.playerRace.finished) this.finalizeRace();
   }
 
@@ -267,6 +297,7 @@ export class Game {
 
   private finalizeRace(): void {
     this.finished = true;
+    this.audio.play("finish");
     const outcome = this.prog.recordRace({
       trackId: this.currentTrack().id,
       carId: this.prog.selectedCarId,
@@ -310,6 +341,7 @@ export class Game {
       rivals: this.arena.cars.filter((c) => !c.isPlayer).map((c) => c.body),
       position: this.playerPosition(),
       total: this.arena.cars.length,
+      skidMarks: this.skid.marks,
     };
     this.renderer.render(scene);
   }
@@ -323,6 +355,7 @@ export class Game {
       "[data-action],[data-selectcar],[data-selecttrack],[data-buy],[data-switchcar]",
     ) as HTMLElement | null;
     if (el === null) return;
+    this.audio.play("click");
 
     const action = el.getAttribute("data-action");
     if (action === "start" || action === "raceagain") this.startRace();
@@ -373,6 +406,8 @@ export class Game {
       cleared: this.prog.isTrackCleared(t.id),
       unlocked: this.prog.isTrackUnlocked(i),
       selected: t.id === this.prog.selectedTrackId,
+      vibe: t.vibe,
+      difficulty: t.difficulty,
     }));
 
     const carOwned: OwnedUpgrades = this.prog.upgradesFor(

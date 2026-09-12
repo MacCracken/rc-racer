@@ -243,6 +243,39 @@ track, understand they should upgrade, upgrade, and feel progress — with juice
 **Deliverable demo:** "The **product** — a small but complete, juicy arcade
 racer." Publicize-able.
 
+**Status (Phase 3): 🚧 IN PROGRESS — content + the headless-verifiable polish in; pure-visual/juice remains for the browser run.**
+
+_Shipped & headless-verified:_
+
+- **Content scale — data, not code.** `tracks.ts` now has **6 tracks**
+  (added Riverbend, Clover, Slalom) and `cars.ts` has a **3rd class, the
+  1/8 Brawler** (heavy, grippy, brutal braking). Every new thing is a data
+  entry; the sim/UI are unchanged.
+- **Content QA guard** (`test/game/Content.test.ts`): asserts the catalog is
+  non-trivial (≥5 tracks, ≥3 cars) — and, crucially, that **every track is
+  drivable end-to-end** (a stock sedan closes a lap on each one) — so a future
+  author can't ship an undrivable centerline. Also asserts each track's economy
+  - difficulty metadata is sane and the car classes are genuinely distinct.
+- **Difficulty + vibe metadata** surfaced in the menu (difficulty as ● dots per
+  track) and retuned `parLapMs` to realistic single-lap values so the economy
+  bonus actually fires on genuinely fast laps.
+- **Skid marks** (`core/SkidMarks.ts`, pure) — rear-wheel decals while drifting
+  (slip above a threshold), capped + age-fading, drawn on the asphalt under the
+  car via the renderer seam. Unit-tested (lays only on slip, caps, ages out).
+- **Audio seam** (`core/Audio.ts`) — a discrete `SoundEvent` model kept out of
+  the sim: `lap`/`finish`/`click` fire from `Game`. `WebAudio` plays a short
+  oscillator per event in a browser and degrades to a no-op headless; `NullAudio`
+  records events for tests. The _audible_ output is the one part that genuinely
+  needs a browser — only the event model is verified here.
+
+_Deliberately deferred to the browser-run polish (not headless-verifiable):_
+
+- Curved curbs, tire smoke, finish confetti, ghost line from best lap, minimap,
+  and the actual _sound_ of the audio seam. These are visual/juice only and
+  need a screen to verify — they fold into Phase 4 once a browser is in play. Track
+  editor / JSON authoring tool, onboarding how-to text, and a tested save-
+  migration path are also still on the Phase 3→4 list.
+
 ---
 
 ## Phase 4 — Feel tuning pass & release demo _(~1–2 days)_
@@ -318,8 +351,8 @@ Realistic to a "good enough public demo" in **~1–1.5 weeks focused effort**.
 
 ## Definition of done (for the demo / end of Phase 4)
 
-- [ ] Drivable car with real traction/drift on a top-down track.
-- [ ] 2 car classes, 3 tracks, working upgrade tree + credits + save.
-- [ ] AI rivals + best-lap records.
-- [ ] Juicy (skid marks, engine pitch, minimap), onboarded, 60fps.
+- [x] Drivable car with real traction/drift on a top-down track.
+- [x] 3 car classes, 6 tracks, working upgrade tree + credits + save.
+- [x] AI rivals + best-lap records.
+- [x] Skid marks + audio event seam in (visual/juice + 60fps check pending a browser).
 - [ ] Deployed at a public URL; 60-sec first-run video exists.

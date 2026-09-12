@@ -3,6 +3,7 @@ import type { Camera } from "./Camera.ts";
 import type { IRenderer, RenderScene } from "./types.ts";
 import type { BuiltTrack, TrackDef } from "../track/Track.ts";
 import type { RaceState } from "../race/RaceState.ts";
+import type { SkidMark } from "./SkidMarks.ts";
 import { CAR_LENGTH, CAR_WIDTH } from "./tuning.ts";
 import { formatLap, currentLapTimeMs } from "../race/RaceState.ts";
 
@@ -34,14 +35,25 @@ export class Canvas2DRenderer implements IRenderer {
   }
 
   render(scene: RenderScene): void {
-    const { camera, track, car, race, speed, nowMs, rivals, position, total } =
-      scene;
+    const {
+      camera,
+      track,
+      car,
+      race,
+      speed,
+      nowMs,
+      rivals,
+      position,
+      total,
+      skidMarks,
+    } = scene;
     const w = this.canvas.width / this.dpr;
     const h = this.canvas.height / this.dpr;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     this.drawBackground(track.def, w, h);
     this.drawTrack(track, camera);
+    this.drawSkidMarks(skidMarks, camera);
     this.drawNextGate(track, camera, race);
     this.drawRivals(rivals, camera);
     this.drawCar(car, camera);
@@ -85,6 +97,33 @@ export class Canvas2DRenderer implements IRenderer {
 
     // Start / finish line at gate 0.
     this.drawStartLine(track, cam);
+  }
+
+  /**
+   * Draw the skid trail on the asphalt, under the cars. Each mark is a short
+   * dark segment oriented with the car's heading, fading with its alpha.
+   */
+  private drawSkidMarks(marks: SkidMark[] | undefined, cam: Camera): void {
+    if (marks === undefined || marks.length === 0) return;
+    const { ctx } = this;
+    const len = CAR_LENGTH * 0.55 * cam.zoom;
+    const width = Math.max(2, CAR_WIDTH * 0.32 * cam.zoom);
+    ctx.save();
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    for (const m of marks) {
+      const p = cam.toScreen({ x: m.x, y: m.y });
+      const dx = Math.cos(m.angle) * (len / 2);
+      const dy = Math.sin(m.angle) * (len / 2);
+      ctx.globalAlpha = m.alpha * 0.35;
+      ctx.strokeStyle = "#0a0a0a";
+      ctx.beginPath();
+      ctx.moveTo(p.x - dx, p.y - dy);
+      ctx.lineTo(p.x + dx, p.y + dy);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   private strokeCurb(pts: { x: number; y: number }[], cam: Camera): void {
@@ -234,6 +273,7 @@ export class Canvas2DRenderer implements IRenderer {
   }
 
   // --- geometry helpers ---
+
   private tracePolygon(
     pts: { x: number; y: number }[],
     cam: Camera,

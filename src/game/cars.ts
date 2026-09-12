@@ -1,14 +1,14 @@
 import type { CarStats } from "../core/tuning.ts";
 
 /**
- * A car class is a *stat vector*: the numbers that feed the physics. This is the
+ * A car class is a _stat vector_: the numbers that feed the physics. This is the
  * seam Phase 1 promised — the Vehicle Model is a pure function of a CarStats, so
  * a new car is just a new row of numbers, no new code.
  */
 export interface CarClass {
   id: string;
   name: string;
-  /** Short display label shown in the menu (e.g. "Street", "1/10"). */
+  /** Short display label shown in the menu (e.g. "Street", "1/10", "1/8"). */
   classLabel: string;
   blurb: string;
   /** Base stat vector; upgrades are deltas applied on top. */
@@ -51,6 +51,24 @@ export const carClasses: CarClass[] = [
       handbrakeGrip: 0.02,
     },
     cost: 500,
+  },
+  {
+    id: "brawler",
+    name: "1/8 Brawler",
+    classLabel: "1/8",
+    blurb:
+      "Heavy, grippy and brutal: huge cornering power and big brakes, but a lower top end.",
+    base: {
+      maxSpeed: 205,
+      accel: 165,
+      braking: 320,
+      reverseAccel: 80,
+      drag: 0.4,
+      turnRate: 3.5,
+      grip: 0.24,
+      handbrakeGrip: 0.04,
+    },
+    cost: 1200,
   },
 ];
 

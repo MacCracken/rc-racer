@@ -23,6 +23,10 @@ export interface TrackDef {
   parLapMs?: number;
   /** 0..1 autopilot target pace when there are no AI rivals / for one. */
   aiPace?: number;
+  /** Short flavour + difficulty line shown near the track name in the menu. */
+  vibe?: string;
+  /** Rough difficulty 1..5 for menu display (does not affect the sim). */
+  difficulty?: number;
 }
 
 export interface Gate {

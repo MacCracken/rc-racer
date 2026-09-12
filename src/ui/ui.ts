@@ -27,6 +27,9 @@ export interface TrackRow {
   cleared: boolean;
   unlocked: boolean;
   selected: boolean;
+  /** Flavour line + rough difficulty for the menu (both optional). */
+  vibe?: string;
+  difficulty?: number;
 }
 
 export interface UpgradeRow {
@@ -98,7 +101,7 @@ export function menuHtml(m: UiModel): string {
       return `
        <button class="${cls}" data-selecttrack="${t.id}"${locked ? " disabled" : ""}>
          <span class="track-name">${esc(t.name)}</span>
-         <span class="track-meta">${t.laps} laps · par ${esc(t.parLabel)}${clear}</span>
+         <span class="track-meta">${t.laps} laps · par ${esc(t.parLabel)}${t.difficulty !== undefined ? " · " + "●".repeat(t.difficulty) : ""}${clear}</span>
        </button>`;
     })
     .join("");

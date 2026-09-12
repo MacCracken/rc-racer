@@ -1,6 +1,7 @@
 import type Matter from "matter-js";
 import type { Camera } from "./Camera.ts";
 import type { BuiltTrack } from "../track/Track.ts";
+import type { SkidMark } from "./SkidMarks.ts";
 import type { RaceState } from "../race/RaceState.ts";
 
 /**
@@ -23,6 +24,8 @@ export interface RenderScene {
   /** Live position (1 = P1) + field size for the HUD when racing a field. */
   position?: number;
   total?: number;
+  /** Decaying tire-skid trail drawn on the asphalt under the cars. */
+  skidMarks?: SkidMark[];
 }
 
 export interface IRenderer {
