@@ -1,28 +1,26 @@
-/**
- * Core framework interfaces. These are the *seams* we never want to rewrite:
- *   - IRenderer  -> swap Canvas2D for PixiJS/WebGL without touching the sim
- *   - IInput     -> swap keyboard for touch/gamepad without touching the loop
- *   - The simulation (Vehicle, tracks) is pure and independent of both.
- */
+import type Matter from "matter-js";
 import type { Camera } from "./Camera.ts";
-import type { Vehicle } from "./Vehicle.ts";
+import type { BuiltTrack } from "../track/Track.ts";
+import type { RaceState } from "../race/RaceState.ts";
 
-/** A static-ish description of something renderable on the track. */
+/**
+ * The renderer seam. Phase 0: Canvas2D. Swap `Canvas2DRenderer` for a PixiJS /
+ * WebGL renderer by implementing `IRenderer` — the loop, physics, and race
+ * logic never see it.
+ */
 export interface RenderScene {
   camera: Camera;
-  car: Vehicle;
-  /** Free-form extras for later phases (skid marks, AI cars, HUD props). */
-  extras?: readonly Renderable[];
-}
-
-export interface Renderable {
-  kind: string;
-  [key: string]: unknown;
+  track: BuiltTrack;
+  /** The live car body (Matter.js); the renderer reads position + angle. */
+  car: Matter.Body;
+  race: RaceState;
+  /** Forward speed (px/s, signed) for the HUD. */
+  speed: number;
+  /** ms clock, for the live lap timer. */
+  nowMs: number;
 }
 
 export interface IRenderer {
-  /** Adjust the backing store to a new CSS size (call on resize). */
   resize(width: number, height: number, dpr?: number): void;
-  /** Draw one frame. `alpha` is the interpolation factor in [0,1). */
-  render(scene: RenderScene, alpha: number): void;
+  render(scene: RenderScene): void;
 }

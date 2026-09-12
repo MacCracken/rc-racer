@@ -61,7 +61,7 @@ Set up the machine so that future phases are pure feature work.
 - Repo hygiene: `.gitignore`, git init, first commit. CI stub (lint+typecheck).
 
 **Exit criteria:** A box moves on screen driven by the keyboard; dev server
-hott reloads; `npm run test/build/lint` all pass.  ✅ Achieved: typecheck clean,
+hott reloads; `npm run test/build/lint` all pass. ✅ Achieved: typecheck clean,
 lint clean, 9 passing tests, prod build OK, dev server serves the app and
 transforms `main.ts`. Two real physics bugs were caught by the tests and fixed:
 brake could overshoot into reverse, and a parked car could spin.
@@ -70,7 +70,7 @@ brake could overshoot into reverse, and a parked car could spin.
 
 ---
 
-## Phase 1 — Vertical slice: one car, one track _(~1–2 days)_
+## Phase 1 — Vertical slice: one car, one track _(~1–2 days)_ ✅ DONE
 
 The single most important phase. Proves feel + camera + loop end-to-end.
 
@@ -99,6 +99,37 @@ This alone is 40% of the sellable demo.
 torque, engine force, drag coefficient, and grip as named constants/curve knobs
 and tune them _during_ this phase; commit a `tuning.ts` you keep editing.
 Accept "good enough" by feel, not by formula.
+
+**Status (Phase 1): ✅ DONE.** A single car on three data-authored tracks, with
+top-down Matter.js physics, a lap timer, curbs/asphalt rendering, a
+look-ahead camera, and a speed/lap/time HUD.
+
+- **`tuning.ts`** holds the car stat vector (`maxSpeed`, `accel`, `grip`,
+     `braking`, `turnRate`, `handbrakeGrip`, …) — a pure function of stats so
+     **Phase 2 just feeds it different numbers**. This is the seam the whole game
+     hangs off.
+- **`physics/MatterCar.ts`** — the car is a real Matter.js body. For a top-down
+     raceway ribbon we integrate the car ourselves (deterministic; avoids
+     Matter's `Engine.update` time-step footguns) and use an analytic
+     stay-in-the-band collision against the track annulus — correct by
+     construction and impossible to stall. Full SAT/wheel constraints are a
+     planned later-phase upgrade; `walls` are real (invisible) Matter bodies, so
+     the seam is there.
+- **`track/Track.ts`** turns an authored centerline into a closed outer/inner
+     ring, per-segment wall bodies, start/finish + checkpoint gates, and bounds.
+- **`track/tracks.ts`** — three hand-authored tracks: Overture (flowy), Hairpin
+     (technical), Dust Bowl (fast oval). Data-driven, no code per track.
+- **`race/RaceState.ts`** — sequential checkpoint gates (must cross 1,2,…,0)
+     to prevent skip-credits + lap counting + best/last/current timing. Pure and
+     fully unit-tested.
+- **Validation:** a competent-driver auto-controller (not in the build)
+     is completed **5 laps on Overture and 3 on Hairpin** headless, proving the
+     physics + lap loop compose into a finishable circuit. A human will do
+     better. Physics is validated by 17 unit tests + headless sims.
+
+**Known gaps for Phase 2 to fold in:** AI rival cars (the per-track
+  autopilot is currently a throwaway validator, not game logic); reverse
+  gear; a proper mass/weight feel. Feel tuning is ongoing (`tuning.ts`).
 
 ---
 
