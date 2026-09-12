@@ -8,7 +8,7 @@ Generated from `roadmap.md` Phase 3 → Phase 4.
 - [ ] Curved curbs rendering on track edges
 - [ ] Tire smoke decals on hard drift
 - [ ] Finish-line confetti burst
-- [ ] Minimap overlay with car/track position
+- [x] Minimap overlay with car/track position
 - [ ] Ghost-line visual render via `IRenderer.drawGhost` — confirm visibility in dev build
 - [ ] Audio playback: WebAudio engine pitch ~ RPM, UI clicks, finish chime via `core/Audio.ts`
 - [x] Onboarding panel — 30s how-to: controls + earn → upgrade → go faster

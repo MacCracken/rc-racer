@@ -70,6 +70,7 @@ export class Canvas2DRenderer implements IRenderer {
       h,
       position,
       total,
+      car,
     );
   }
 
@@ -266,6 +267,7 @@ export class Canvas2DRenderer implements IRenderer {
     h: number,
     position?: number,
     total?: number,
+    car?: Matter.Body,
   ): void {
     const { ctx } = this;
     ctx.save();
@@ -296,7 +298,82 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.fillRect(w - 200, h - 52, 190, 42);
     ctx.fillStyle = "#fff";
     ctx.fillText(`SPD ${kmh} km/h`, w - 190, h - 40);
+
+    // minimap top-right
+    if (car) this.drawMinimap(ctx, track, car, w, h);
+
     ctx.restore();
+  }
+
+  private drawMinimap(
+    ctx: CanvasRenderingContext2D,
+    track: BuiltTrack,
+    car: Matter.Body,
+    w: number,
+    h: number,
+  ): void {
+    const pad = 12;
+    const mapW = 160;
+    const mapH = 100;
+    const mapX = w - mapW - pad;
+    const mapY = pad;
+
+    // background
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(mapX - 4, mapY - 4, mapW + 8, mapH + 8);
+    ctx.fillStyle = "rgba(10,20,12,0.85)";
+    ctx.fillRect(mapX, mapY, mapW, mapH);
+
+    // compute bounds from outer ring
+    const pts = track.outer;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    const rangeX = Math.max(1, maxX - minX);
+    const rangeY = Math.max(1, maxY - minY);
+    const scale = Math.min(mapW / rangeX, mapH / rangeY) * 0.9;
+    const offX = mapX + (mapW - rangeX * scale) / 2 - minX * scale;
+    const offY = mapY + (mapH - rangeY * scale) / 2 - minY * scale;
+
+    const to = (p: { x: number; y: number }) => ({
+      x: offX + p.x * scale,
+      y: offY + p.y * scale,
+    });
+
+    // track outline
+    ctx.strokeStyle = "#4a6b4a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const q = to(p);
+      if (i === 0) ctx.moveTo(q.x, q.y);
+      else ctx.lineTo(q.x, q.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+
+    // inner
+    ctx.strokeStyle = "#2b3d2b";
+    ctx.beginPath();
+    track.inner.forEach((p, i) => {
+      const q = to(p);
+      if (i === 0) ctx.moveTo(q.x, q.y);
+      else ctx.lineTo(q.x, q.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+
+    // player dot
+    const px = offX + car.position.x * scale;
+    const py = offY + car.position.y * scale;
+    ctx.fillStyle = "#e33b3b";
+    ctx.beginPath();
+    ctx.arc(px, py, 3, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // --- geometry helpers ---
