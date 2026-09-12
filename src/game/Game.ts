@@ -30,7 +30,7 @@ import {
   type OwnedUpgrades,
 } from "./upgrades.ts";
 import { LocalSaveStore, MemorySaveStore } from "./save.ts";
-import type { ISaveStore, SaveData } from "./save.ts";
+import type { ISaveStore } from "./save.ts";
 import type { IRenderer, RenderScene } from "../core/types.ts";
 import { createAudio, type IAudio } from "../core/Audio.ts";
 import {
