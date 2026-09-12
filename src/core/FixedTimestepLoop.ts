@@ -37,10 +37,12 @@ export class FixedTimestepLoop {
       this.stepsThisFrame += 1;
     }
 
-    // If we hit the cap, drop the remainder rather than carry a backlog
-    // that would make the next frame do a huge catch-up.
+    // If we hit the cap, keep the remainder to avoid permanent time loss.
+    // The next frame will consume it, preventing a permanent drift.
     if (this.stepsThisFrame >= MAX_STEPS_PER_FRAME) {
-      this.accumulator = 0;
+      // Keep the remainder so simulation time is not lost forever.
+      // We still cap the maximum time we allow to accumulate.
+      this.accumulator = Math.min(this.accumulator, MAX_FRAME_TIME);
     }
 
     return this.accumulator / this.fixedDt;

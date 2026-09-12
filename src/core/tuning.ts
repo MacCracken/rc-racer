@@ -7,6 +7,14 @@ export const MAX_FRAME_TIME = 0.25;
 // Max simulation steps applied per render frame (safety valve).
 export const MAX_STEPS_PER_FRAME = 8;
 
+// Camera & follow tuning
+export const CAMERA_LERP_RATE = 14;      // 1/s exponential smoothing
+export const CAMERA_LOOKAHEAD = 0.35;    // fraction of velocity to look ahead
+
+// Gate tunnel prevention
+export const GATE_SUBSTEPS = 4;         // sub-steps per fixed dt for gate checks
+export const GATE_TOLERANCE = 6;        // px tolerance for gate crossing
+
 /**
  * Drivability of a single car. Phase 1 hardcodes `defaultCarStats`. Phase 2
  * turns these into a data-driven upgrade model (the upgrade tree mutates a

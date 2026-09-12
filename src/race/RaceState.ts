@@ -1,6 +1,7 @@
 import { type Vec2, segmentsIntersect } from "../core/vec.ts";
 import { recordLap, type Ghost } from "./Ghost.ts";
 import type { BuiltTrack } from "../track/Track.ts";
+import { GATE_SUBSTEPS, GATE_TOLERANCE } from "../core/tuning.ts";
 
 /**
  * Sequenced checkpoint / lap detection. The car must cross gates in index
@@ -59,9 +60,26 @@ export class RaceState {
     const gate = this.track.gates[this.nextGate];
     if (gate === undefined) return;
 
-    if (segmentsIntersect(prev, cur, gate.a, gate.b)) {
+    if (this.checkGateCross(prev, cur, gate)) {
       this.onGateCrossed(gate.index);
     }
+  }
+
+  private checkGateCross(prev: Vec2, cur: Vec2, gate: { a: Vec2; b: Vec2; index: number }): boolean {
+    // Sub-step the segment to avoid tunneling through narrow gates at high speed.
+    const dx = cur.x - prev.x;
+    const dy = cur.y - prev.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return segmentsIntersect(prev, cur, gate.a, gate.b);
+    const steps = Math.max(1, Math.min(GATE_SUBSTEPS, Math.ceil(len / GATE_TOLERANCE)));
+    for (let i = 0; i < steps; i++) {
+      const t0 = i / steps;
+      const t1 = (i + 1) / steps;
+      const p0 = { x: prev.x + dx * t0, y: prev.y + dy * t0 };
+      const p1 = { x: prev.x + dx * t1, y: prev.y + dy * t1 };
+      if (segmentsIntersect(p0, p1, gate.a, gate.b)) return true;
+    }
+    return false;
   }
 
   private onGateCrossed(gateIndex: number): void {

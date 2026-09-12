@@ -29,6 +29,7 @@ import {
   type SlotId,
   type OwnedUpgrades,
 } from "./upgrades.ts";
+import { LocalSaveStore, MemorySaveStore } from "./save.ts";
 import type { ISaveStore, SaveData } from "./save.ts";
 import type { IRenderer, RenderScene } from "../core/types.ts";
 import { createAudio, type IAudio } from "../core/Audio.ts";
@@ -39,7 +40,7 @@ import {
   type SkidState,
 } from "../core/SkidMarks.ts";
 import type { Ghost } from "../race/Ghost.ts";
-import { CAR_LENGTH, CAR_WIDTH } from "../core/tuning.ts";
+import { CAR_LENGTH, CAR_WIDTH, CAMERA_LERP_RATE, CAMERA_LOOKAHEAD } from "../core/tuning.ts";
 import {
   menuHtml,
   garageHtml,
@@ -120,8 +121,7 @@ export class Game {
     this.rivals = deps.rivals ?? 3;
     this.carClasses = deps.carClasses ?? DEFAULT_CARS;
     this.trackDefs = deps.tracks ?? DEFAULT_TRACKS;
-    const hasStorage = typeof localStorage !== "undefined";
-    this.store = hasStorage ? new LocalStore("rc-racer-save") : new NullStore();
+    this.store = deps.store ?? (typeof localStorage !== "undefined" ? new LocalSaveStore() : new MemorySaveStore());
     const w = typeof window !== "undefined" ? window.innerWidth : 800;
     const h = typeof window !== "undefined" ? window.innerHeight : 600;
     this.camera = new Camera({ x: 0, y: 0 }, w, h, 0.55);
@@ -331,13 +331,12 @@ export class Game {
 
   private followCamera(dt: number): void {
     const pb = this.arena.cars[0]!.body;
-    const lead = 0.35; // fraction of current velocity to look ahead
     this.camera.lerpTo(
       {
-        x: pb.position.x + pb.velocity.x * lead,
-        y: pb.position.y + pb.velocity.y * lead,
+        x: pb.position.x + pb.velocity.x * CAMERA_LOOKAHEAD,
+        y: pb.position.y + pb.velocity.y * CAMERA_LOOKAHEAD,
       },
-      14,
+      CAMERA_LERP_RATE,
       dt,
     );
   }
@@ -489,38 +488,5 @@ export class Game {
 
   private save(): void {
     this.store.save(this.prog.snapshot());
-  }
-}
-
-/** In-memory store for environments without localStorage (e.g. headless). */
-class NullStore implements ISaveStore {
-  save(): void {
-    void 0;
-  }
-  load(): SaveData | null {
-    return null;
-  }
-}
-
-/**
- * LocalStorage-backed save. Guarded so a blocked/missing localStorage never
- * breaks the game.
- */
-class LocalStore implements ISaveStore {
-  constructor(private readonly key: string) {}
-  save(d: SaveData): void {
-    try {
-      localStorage.setItem(this.key, JSON.stringify(d));
-    } catch {
-      // storage full / disabled: keep playing
-    }
-  }
-  load(): SaveData | null {
-    try {
-      const raw = localStorage.getItem(this.key);
-      return raw === null ? null : (JSON.parse(raw) as SaveData);
-    } catch {
-      return null;
-    }
   }
 }
