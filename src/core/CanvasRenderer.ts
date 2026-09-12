@@ -34,7 +34,8 @@ export class Canvas2DRenderer implements IRenderer {
   }
 
   render(scene: RenderScene): void {
-    const { camera, track, car, race, speed, nowMs } = scene;
+    const { camera, track, car, race, speed, nowMs, rivals, position, total } =
+      scene;
     const w = this.canvas.width / this.dpr;
     const h = this.canvas.height / this.dpr;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -42,8 +43,19 @@ export class Canvas2DRenderer implements IRenderer {
     this.drawBackground(track.def, w, h);
     this.drawTrack(track, camera);
     this.drawNextGate(track, camera, race);
+    this.drawRivals(rivals, camera);
     this.drawCar(car, camera);
-    this.drawHUD(track.def.name, race, track, speed, nowMs, w, h);
+    this.drawHUD(
+      track.def.name,
+      race,
+      track,
+      speed,
+      nowMs,
+      w,
+      h,
+      position,
+      total,
+    );
   }
 
   // --- world-space rendering ---
@@ -134,6 +146,28 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.restore();
   }
 
+  private drawRivals(rivals: Matter.Body[] | undefined, cam: Camera): void {
+    if (rivals === undefined || rivals.length === 0) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1;
+    const w = CAR_WIDTH * cam.zoom;
+    const l = CAR_LENGTH * cam.zoom * 0.9;
+    for (const r of rivals) {
+      const p = cam.toScreen({ x: r.position.x, y: r.position.y });
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(r.angle);
+      ctx.fillStyle = "#4aa3ff";
+      this.roundRect(-l / 2, -w / 2, l, w, 2 * cam.zoom);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   private drawCar(car: Matter.Body, cam: Camera): void {
     const { ctx } = this;
     const p = cam.toScreen({ x: car.position.x, y: car.position.y });
@@ -164,6 +198,8 @@ export class Canvas2DRenderer implements IRenderer {
     nowMs: number,
     w: number,
     h: number,
+    position?: number,
+    total?: number,
   ): void {
     const { ctx } = this;
     ctx.save();
@@ -184,6 +220,9 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.fillText(`BEST ${best}`, 130, 10);
     ctx.fillText(`LAST ${last}`, 300, 10);
     ctx.fillText(`NOW ${formatLap(cur)}`, 460, 10);
+    if (position !== undefined && total !== undefined) {
+      ctx.fillText("P " + position + "/" + total, w - 150, 10);
+    }
     ctx.fillText(trackName, 12, 30);
 
     // speed bar, lower-right

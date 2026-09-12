@@ -4,9 +4,13 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
-  background: #000;
+  background: #0a0f0c;
   color: #fff;
-  font-family: system-ui, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  user-select: none;
 }
 
 #game {
@@ -15,38 +19,389 @@ body {
   inset: 0;
 }
 
-#help {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1.6;
-  pointer-events: none;
-}
+/* ---------------------------------------------------------------- UI layer */
 
-kbd {
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 0 5px;
-  font-family: monospace;
-  font-size: 12px;
-}
-
-#overlay {
+#ui {
   position: absolute;
   inset: 0;
+  pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
-  font-family: monospace;
+}
+
+/* A panel is shown only when its screen is active; the rest stay hidden so the
+   live track renders through them. */
+.screen {
+  position: relative;
+  pointer-events: auto;
+  width: min(920px, 92vw);
+}
+
+/* The canvas renders behind; the active panel floats centered above it */
+/* (Game swaps innerHTML so only one screen is present at a time). */
+
+/* MENU ------------------------------------------------------------------ */
+.screen-menu {
+  background: rgba(8, 14, 11, 0.86);
+  border: 1px solid #2a3830;
+  border-radius: 16px;
+  padding: 28px 32px;
+  backdrop-filter: blur(3px);
+}
+
+.title {
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  margin: 0;
   color: #ffe9a8;
+  text-shadow: 0 3px 10px rgba(0, 0, 0, 0.6);
+}
+
+.sub {
+  color: #9fb4a8;
+  font-size: 14px;
+  margin: 4px 0 18px;
+  font-variant: small-caps;
+}
+
+.balance {
+  font-size: 18px;
+  margin: 8px 0 18px;
+}
+
+.balance b,
+.reward {
+  color: #7dff9b;
+}
+
+.cols {
+  display: flex;
+  gap: 28px;
+}
+
+.col {
+  flex: 1;
+}
+
+.col-head {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #6f8578;
+  margin: 0 0 8px;
+  font-variant: small-caps;
+}
+
+.car-row,
+.track-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  background: #14201a;
+  border: 1px solid #263a30;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 8px 0;
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  transition:
+    border 0.15s,
+    background 0.15s,
+    transform 0.05s;
+}
+
+.car-row:hover,
+.track-row:hover {
+  border-color: #46b38a;
+  transform: translateY(-1px);
+}
+
+.car-row.selected,
+.track-row.selected {
+  border-color: #7dff9b;
+  background: #1b2e25;
+}
+
+.car-row.not-owned {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.track-row.locked {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.car-name,
+.track-name {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.car-class {
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: #6f8578;
+  font-variant: small-caps;
+}
+
+.car-blurb {
+  font-size: 12px;
+  color: #9fb4a8;
+  max-width: 26ch;
+}
+
+.cost {
+  font-size: 13px;
+  color: #7dff9b;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.track-meta {
+  font-size: 12px;
+  color: #9fb4a8;
+}
+
+.hint {
+  margin-top: 18px;
+  font-size: 12px;
+  color: #8a9e92;
+}
+
+button {
+  font-family: inherit;
+}
+
+.primary {
+  margin-top: 14px;
+  background: #46b38a;
+  color: #07120d;
+  border: none;
+  border-radius: 8px;
+  padding: 11px 22px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary:active {
+  transform: translateY(1px);
+}
+
+.ghost {
+  background: transparent;
+  color: #cfe;
+  border: 1px solid #3a4f45;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.ghost:hover {
+  border-color: #7dff9b;
+}
+
+/* GARAGE ---------------------------------------------------------------- */
+
+.panel {
+  background: rgba(8, 14, 11, 0.94);
+  border: 1px solid #2a3830;
+  border-radius: 16px;
+  padding: 20px 26px;
+  width: min(960px, 94vw);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 18px;
+}
+
+.panel-title {
+  flex: 1;
+}
+
+.balance2 {
+  color: #7dff9b;
+  font-size: 16px;
+}
+
+.garage-body {
+  display: flex;
+  gap: 30px;
+}
+
+.garage-left,
+.garage-right {
+  flex: 1;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.stat-label {
+  width: 80px;
+  color: #9fb4a8;
+}
+
+.bar {
+  flex: 1;
+  height: 10px;
+  background: #1d2a24;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #2b6a4f, #7dff9b);
+  transition: width 0.2s;
+}
+
+.stat-val {
+  width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.car-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mini-car {
+  background: #14201a;
+  border: 1px solid #263a30;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.mini-car.selected {
+  border-color: #7dff9b;
+}
+
+.mini-car.locked {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.slot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: #14201a;
+  border: 1px solid #263a30;
+  border-radius: 10px;
+  padding: 11px 14px;
+  margin: 8px 0;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.slot:hover:not(.maxed):not(.cant-afford) {
+  border-color: #46b38a;
+}
+
+.slot.maxed {
+  opacity: 0.55;
+  cursor: default;
+  border-color: #46b38a;
+}
+
+.slot.cant-afford {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.slot-name em {
+  font-style: normal;
+  color: #6f8578;
+  font-size: 12px;
+}
+
+.slot-cost {
+  color: #7dff9b;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  color: #6f8578;
+  font-style: italic;
+  font-size: 13px;
+}
+
+/* RESULTS --------------------------------------------------------------- */
+.results-panel {
   text-align: center;
-  white-space: pre;
-  pointer-events: none;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+
+.result-position {
+  font-size: 56px;
+  font-weight: 800;
+  color: #ffe9a8;
+  margin: 6px 0;
+}
+
+.result-time {
+  font-size: 18px;
+  margin: 6px 0;
+}
+
+.reward {
+  color: #7dff9b;
+  font-weight: 700;
+  font-size: 20px;
+  margin: 12px 0 4px;
+}
+
+.new-record {
+  color: #ffe9a8;
+  font-weight: 700;
+  font-size: 16px;
+  margin: 8px 0;
+  animation: pulse 1s infinite alternate;
+}
+
+@keyframes pulse {
+  from {
+    opacity: 0.6;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.unlocks {
+  color: #7dff9b;
+  font-size: 14px;
+  margin-top: 6px;
+}
+
+.results-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 20px;
 }

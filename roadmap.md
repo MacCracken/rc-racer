@@ -105,31 +105,31 @@ top-down Matter.js physics, a lap timer, curbs/asphalt rendering, a
 look-ahead camera, and a speed/lap/time HUD.
 
 - **`tuning.ts`** holds the car stat vector (`maxSpeed`, `accel`, `grip`,
-     `braking`, `turnRate`, `handbrakeGrip`, …) — a pure function of stats so
-     **Phase 2 just feeds it different numbers**. This is the seam the whole game
-     hangs off.
+  `braking`, `turnRate`, `handbrakeGrip`, …) — a pure function of stats so
+  **Phase 2 just feeds it different numbers**. This is the seam the whole game
+  hangs off.
 - **`physics/MatterCar.ts`** — the car is a real Matter.js body. For a top-down
-     raceway ribbon we integrate the car ourselves (deterministic; avoids
-     Matter's `Engine.update` time-step footguns) and use an analytic
-     stay-in-the-band collision against the track annulus — correct by
-     construction and impossible to stall. Full SAT/wheel constraints are a
-     planned later-phase upgrade; `walls` are real (invisible) Matter bodies, so
-     the seam is there.
+  raceway ribbon we integrate the car ourselves (deterministic; avoids
+  Matter's `Engine.update` time-step footguns) and use an analytic
+  stay-in-the-band collision against the track annulus — correct by
+  construction and impossible to stall. Full SAT/wheel constraints are a
+  planned later-phase upgrade; `walls` are real (invisible) Matter bodies, so
+  the seam is there.
 - **`track/Track.ts`** turns an authored centerline into a closed outer/inner
-     ring, per-segment wall bodies, start/finish + checkpoint gates, and bounds.
+  ring, per-segment wall bodies, start/finish + checkpoint gates, and bounds.
 - **`track/tracks.ts`** — three hand-authored tracks: Overture (flowy), Hairpin
-     (technical), Dust Bowl (fast oval). Data-driven, no code per track.
+  (technical), Dust Bowl (fast oval). Data-driven, no code per track.
 - **`race/RaceState.ts`** — sequential checkpoint gates (must cross 1,2,…,0)
-     to prevent skip-credits + lap counting + best/last/current timing. Pure and
-     fully unit-tested.
+  to prevent skip-credits + lap counting + best/last/current timing. Pure and
+  fully unit-tested.
 - **Validation:** a competent-driver auto-controller (not in the build)
-     is completed **5 laps on Overture and 3 on Hairpin** headless, proving the
-     physics + lap loop compose into a finishable circuit. A human will do
-     better. Physics is validated by 17 unit tests + headless sims.
+  is completed **5 laps on Overture and 3 on Hairpin** headless, proving the
+  physics + lap loop compose into a finishable circuit. A human will do
+  better. Physics is validated by 17 unit tests + headless sims.
 
 **Known gaps for Phase 2 to fold in:** AI rival cars (the per-track
-  autopilot is currently a throwaway validator, not game logic); reverse
-  gear; a proper mass/weight feel. Feel tuning is ongoing (`tuning.ts`).
+autopilot is currently a throwaway validator, not game logic); reverse
+gear; a proper mass/weight feel. Feel tuning is ongoing (`tuning.ts`).
 
 ---
 
@@ -166,6 +166,55 @@ faster." This is the "good enough demo" milestone (≈end of Phase 4 polish).
 **Risk:** tuning AI to be "fair and fun" is fiddly. Mitigation: AI autopilot
 as its own tunable module with per-track "pace" factor; ship it _imperfect but
 legible_ — an AI that sometimes takes the wrong line is fine for a demo.
+
+**Status (Phase 2): ✅ DONE (logic + headless proof; visual run pending a browser).**
+Everything Phase 2 promises about the _loop_ is built and green:
+
+- **Stats + upgrades centralized** and data-driven (`upgrades.ts`, `cars.ts`).
+  Seven families (Engine/Tires/Brakes/Suspension/Chassis/Aero/Drift) × tiers
+  map onto the existing CarStats knobs, so upgrades change _real physics_ with
+  no simulation change. `applyBuild`/`nextTier`/`totalInvested`/`statBars`
+  are pure + unit-tested.
+- **Economy** (`economy.ts`): `computeReward` = `base(8/lap) + bonus`
+  where bonus = `clamp(round((par/best)^1.6 − 1) × 180, 0, 320)` —
+  strictly monotonic in lap time (a faster lap always pays more), diminishing
+  so a perfect lap can't be farmed. Verified by tests (160 vs 151 vs 120 vs
+  78 vs 60). `parLapMs` lives on each `TrackDef`.
+- **Save/load** (`save.ts`): `ISaveStore` seam with `LocalSaveStore`
+  (production) + `MemorySaveStore` (tests). `SaveData` is versioned;
+  `migrate` defends against corruption/missing fields. `Progression.fromStore`
+  loads, `.snapshot()` saves.
+- **`Progression` orchestrator** (`progression.ts`): owns `SaveData`, exposes
+  `recordRace` (awards credits, sets best lap, marks track cleared,
+  detects car-class unlocks), `buyUpgrade`, `unlockCar`, `resolveStats`,
+  `isTrackUnlocked` (each track needs its predecessor cleared). Fully
+  unit-tested.
+- **AI autopilot** (`race/AiDriver.ts`): a _pure_ module (no Matter import) —
+  `aiInput(d, track, pace, out, lookahead?)` chases a look-ahead point on the
+  centerline, brakes by corner sharpness (thresholds scale with `pace`), and
+  edge-recovers to the centerline when too far out. `makeDriver(track, {pace})`
+  is the per-rival convenience. Each `TrackDef` carries an `aiPace`.
+- **Multi-car arena** (`MatterCar.createArena`): player + N rivals, rivals
+  varied slightly by index. **Cars never collide with each other** (shared
+  negative collision group) but still hit walls — a clean demo.
+- **`Game` director** (`game/Game.ts`): ties Progression + arena + renderer +
+  keyboard input + a `menu → garage → race → results` state machine. Renders
+  the player + rivals + live Pn HUD; on finish, records the outcome and shows
+  the results screen.
+- **UI** (`ui/ui.ts` + styled `#ui` overlay): data-driven HTML panels for
+  menu (pick car/track), garage (stat bars + buyable slots + car switcher),
+  and results (Pn, best lap, credits earned, new record, unlocks). No DOM in
+  the sim — UI is the only thing that touches the screen.
+- **Headless proof — "the upgrade made me faster"** (`ProgressionLoop.test.ts`):
+  a full matter-driven autopilot race on Hairpin. Proved: (a) the autopilot
+  finishes every track; (b) higher `pace` → faster lap; (c) a 3-tier Engine
+  build makes the finished race _materially faster_ (~8%+ off the base car's
+  best time). This is the heart of Phase 2 and it's a permanent, CI-safe test.
+
+**Caveat:** there is no browser in this environment, so the _visual_ run
+(the DOM panel look/feel) can't be confirmed here — only that everything
+bundles (`vite build` succeeds, 38 tests pass, lint/tsc clean). The loop
+itself is proven headless.
 
 ---
 
@@ -245,7 +294,7 @@ Track the vision, gated, none blocking the demo:
 | ------------------ | ----- | ---------- | ------------------ |
 | 0 Scaffolding      | 0.5 d | 0.5 d      | trivial            |
 | 1 Vertical slice   | 1.5 d | 2 d        | core feel ✅       |
-| 2 Progression loop | 2.5 d | 4.5 d      | loop ✅            |
+| 2 Progression loop | 2.5 d | 4.5 d      | DONE (headless) ✅ |
 | 3 Content + polish | 3.5 d | 8 d        | product ✅         |
 | 4 Tune + release   | 1.5 d | 9.5 d      | **public demo ✅** |
 | 5+ Stretch         | open  | —          | additive           |

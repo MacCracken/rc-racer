@@ -31,6 +31,8 @@ export const overture: TrackDef = {
     96,
   ),
   gateCount: 8,
+  parLapMs: 5400,
+  aiPace: 0.82,
 };
 
 // --- Hairpin: a tight, fast little loop for tighter-cornering cars. ---
@@ -49,6 +51,8 @@ export const hairpin: TrackDef = {
     72,
   ),
   gateCount: 6,
+  parLapMs: 3600,
+  aiPace: 0.78,
 };
 
 // --- Dust Bowl: a rough, high-grip-needed oval. ---
@@ -67,6 +71,8 @@ export const dustBowl: TrackDef = {
     64,
   ),
   gateCount: 8,
+  parLapMs: 3000,
+  aiPace: 0.8,
 };
 
 export const tracks: TrackDef[] = [overture, hairpin, dustBowl];

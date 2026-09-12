@@ -19,6 +19,10 @@ export interface TrackDef {
   background?: string;
   /** Hex asphalt color. */
   surface?: string;
+  /** A "decent" single-lap time in ms for the economy reward curve. */
+  parLapMs?: number;
+  /** 0..1 autopilot target pace when there are no AI rivals / for one. */
+  aiPace?: number;
 }
 
 export interface Gate {

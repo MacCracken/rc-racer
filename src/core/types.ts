@@ -11,13 +11,18 @@ import type { RaceState } from "../race/RaceState.ts";
 export interface RenderScene {
   camera: Camera;
   track: BuiltTrack;
-  /** The live car body (Matter.js); the renderer reads position + angle. */
+  /** The live player car body (Matter.js); the renderer reads position + angle. */
   car: Matter.Body;
   race: RaceState;
   /** Forward speed (px/s, signed) for the HUD. */
   speed: number;
   /** ms clock, for the live lap timer. */
   nowMs: number;
+  /** Optional AI rival bodies to draw around the player. */
+  rivals?: Matter.Body[];
+  /** Live position (1 = P1) + field size for the HUD when racing a field. */
+  position?: number;
+  total?: number;
 }
 
 export interface IRenderer {
