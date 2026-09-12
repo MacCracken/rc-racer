@@ -279,6 +279,9 @@ export class Game {
       r.prev = { x: r.car.body.position.x, y: r.car.body.position.y };
     }
 
+    // Camera follows the player (look-ahead along heading) so the track stays framed.
+    this.followCamera(dt);
+
     if (this.playerRace.lap > this.prevLap) {
       this.audio.play("lap");
       this.prevLap = this.playerRace.lap;
@@ -295,6 +298,19 @@ export class Game {
   private prevOf(b: { position: Vec2 }): Vec2 {
     return (
       this.prevMap.get(b) ?? ({ x: b.position.x, y: b.position.y } as Vec2)
+    );
+  }
+
+  private followCamera(dt: number): void {
+    const pb = this.arena.cars[0]!.body;
+    const lead = 0.35; // fraction of current velocity to look ahead
+    this.camera.lerpTo(
+      {
+        x: pb.position.x + pb.velocity.x * lead,
+        y: pb.position.y + pb.velocity.y * lead,
+      },
+      14,
+      dt,
     );
   }
 
