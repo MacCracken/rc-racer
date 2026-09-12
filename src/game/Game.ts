@@ -44,6 +44,7 @@ import {
   menuHtml,
   garageHtml,
   resultsHtml,
+  raceOverlay,
   formatPar,
   type Screen,
   type UiModel,
@@ -121,10 +122,8 @@ export class Game {
     this.trackDefs = deps.tracks ?? DEFAULT_TRACKS;
     const hasStorage = typeof localStorage !== "undefined";
     this.store = hasStorage ? new LocalStore("rc-racer-save") : new NullStore();
-    const dpr =
-      typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-    const w = (typeof window !== "undefined" ? window.innerWidth : 800) / dpr;
-    const h = (typeof window !== "undefined" ? window.innerHeight : 600) / dpr;
+    const w = typeof window !== "undefined" ? window.innerWidth : 800;
+    const h = typeof window !== "undefined" ? window.innerHeight : 600;
     this.camera = new Camera({ x: 0, y: 0 }, w, h, 0.55);
     this.input = new KeyboardInput();
     this.loop = new FixedTimestepLoop(1 / 120, (dt) => this.onStep(dt));
@@ -153,6 +152,9 @@ export class Game {
     window.addEventListener("resize", () => this.onResize());
     window.addEventListener("keydown", (e) => {
       if (e.code === "KeyR" && this.screen === "race") this.startRace();
+      const quitting =
+        e.code === "Escape" || e.code === "Backspace" || e.code === "KeyQ";
+      if (quitting && this.screen !== "menu") this.backToMenu();
     });
     this.showMenu();
     this.lastFrameMs = performance.now();
@@ -177,7 +179,7 @@ export class Game {
   private onResize(): void {
     const dpr = window.devicePixelRatio || 1;
     this.renderer.resize(window.innerWidth, window.innerHeight, dpr);
-    this.camera.setViewport(window.innerWidth / dpr, window.innerHeight / dpr);
+    this.camera.setViewport(window.innerWidth, window.innerHeight);
   }
 
   // --- screen flow -----------------------------------------------------
@@ -215,6 +217,24 @@ export class Game {
     };
   }
 
+  // Quit to the menu from a race or results screen (Esc/Q/Backspace or the
+  // on-screen Menu control). Resets to the single-car preview arena.
+  private backToMenu(): void {
+    this.audio.play("click");
+    this.finished = false;
+    this.arena = createArena(
+      buildTrack(this.currentTrack()),
+      this.currentStats(),
+      [],
+    );
+    this.racers = [];
+    this.prevMap.clear();
+    this.playerRace = new RaceState(this.arena.track, () => this.clockMs);
+    this.lastResults = null;
+    this.clockMs = 0;
+    this.showMenu();
+  }
+
   private startRace(): void {
     const track = buildTrack(this.currentTrack());
     const stats = this.currentStats();
@@ -241,7 +261,7 @@ export class Game {
     this.skid = createSkid();
     this.prevLap = 0;
     this.screen = "race";
-    this.uiRoot.innerHTML = "";
+    this.uiRoot.innerHTML = raceOverlay();
     const p = this.arena.cars[0]!;
     this.camera.view = { x: p.body.position.x, y: p.body.position.y };
   }
@@ -382,6 +402,7 @@ export class Game {
     if (action === "start" || action === "raceagain") this.startRace();
     else if (action === "garage") this.showGarage();
     else if (action === "menu") this.showMenu();
+    else if (action === "quit") this.backToMenu();
 
     const selCar = el.getAttribute("data-selectcar");
     if (selCar !== null) {

@@ -122,7 +122,7 @@ export function menuHtml(m: UiModel): string {
          <button class="primary" data-action="start">Start race</button>
        </div>
      </div>
-     <div class="hint">WASD / arrows to drive · Space handbrake · R to restart</div>
+     <div class="hint">WASD/arrows to drive · Space handbrake · R restart · Esc or Q to menu</div>
      <button class="ghost" data-action="garage">Open garage</button>
     </div>`;
 }
@@ -223,6 +223,17 @@ export function resultsHtml(view: ResultsView): string {
        </div>
      </div>
    </div>`;
+}
+
+// --- RACE (in-race overlay; the live HUD is drawn on the canvas itself) ---
+
+/** Minimal overlay shown during a race: a quit control + the key hint. */
+export function raceOverlay(): string {
+  return `
+    <div class="screen screen-race-overlay">
+      <button class="ghost quit" data-action="quit">◀ Menu</button>
+      <div class="hint race-hint">WASD / arrows · Space handbrake · R restart · Esc or Q to menu</div>
+    </div>`;
 }
 
 /** Human label for a par time (ms -> "5.4s"). */
