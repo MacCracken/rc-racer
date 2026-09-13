@@ -22,7 +22,7 @@
 - [ ] Increase HUD font contrast and size options
 
 ## Packaging / Release
-- [ ] `npm run build` passes
+- [x] `npm run build` passes
 - [ ] Deploy to static host (Vercel/Netlify)
 - [ ] Record 60-sec first-run video
 - [ ] Update README with public URL
