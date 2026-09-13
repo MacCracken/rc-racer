@@ -19,7 +19,7 @@
 
 ## Accessibility / Readability
 - [x] Colorblind-safe car palette (yellow vs blue)
-- [ ] Increase HUD font contrast and size options
+- [x] Increase HUD font contrast and size options – high-contrast CSS added
 
 ## Packaging / Release
 - [x] `npm run build` passes
