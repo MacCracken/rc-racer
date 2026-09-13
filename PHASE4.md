@@ -8,8 +8,8 @@
 
 ## Performance
 - [x] Add FPS counter to HUD for perf monitoring
+- [x] Cap skid marks to 400
 - [ ] Profile on low-end laptop; ensure 60fps
-- [ ] Cap particles / skid marks
 - [ ] Object pool for skid marks and confetti
 
 ## Input

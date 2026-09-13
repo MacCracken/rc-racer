@@ -20,7 +20,7 @@ export interface SkidState {
 }
 
 /** Hard cap on stored marks so the buffer can't grow unbounded. */
-export const MAX_MARKS = 900;
+export const MAX_MARKS = 400;
 /** Seconds a mark stays fully visible before fading out. */
 export const SKID_LIFETIME = 2.4;
 
