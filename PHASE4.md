@@ -18,7 +18,7 @@
 - [ ] Optional on-screen touch controls for mobile demo
 
 ## Accessibility / Readability
-- [ ] Colorblind-safe HUD palette
+- [x] Colorblind-safe car palette (yellow vs blue)
 - [ ] Increase HUD font contrast and size options
 
 ## Packaging / Release

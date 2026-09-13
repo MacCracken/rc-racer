@@ -260,7 +260,7 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.rotate(car.angle); // Matter.js angle: 0 = facing +x, which is forward.
     const w = CAR_WIDTH * cam.zoom;
     const l = CAR_LENGTH * cam.zoom;
-    ctx.fillStyle = "#e33b3b";
+    ctx.fillStyle = "#f5c542";
     ctx.strokeStyle = "#000";
     ctx.lineWidth = 2;
     this.roundRect(-l / 2, -w / 2, l, w, 3 * cam.zoom);
