@@ -47,6 +47,7 @@ import {
   resultsHtml,
   raceOverlay,
   onboardingHtml,
+  settingsHtml,
   formatPar,
   type Screen,
   type UiModel,
@@ -217,6 +218,11 @@ export class Game {
   private showOnboarding(): void {
     this.screen = "onboarding";
     this.uiRoot.innerHTML = onboardingHtml();
+  }
+
+  private showSettings(): void {
+    this.screen = "settings";
+    this.uiRoot.innerHTML = settingsHtml();
   }
 
   private currentTrack = (): TrackDef =>
@@ -432,6 +438,8 @@ export class Game {
     else if (action === "quit") this.backToMenu();
     else if (action === "howto") this.showOnboarding();
     else if (action === "close-onboarding") this.showMenu();
+    else if (action === "settings") this.showSettings();
+    else if (action === "close-settings") this.showMenu();
 
     const selCar = el.getAttribute("data-selectcar");
     if (selCar !== null) {

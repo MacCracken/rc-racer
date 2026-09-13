@@ -7,7 +7,7 @@
 import type { StatBar } from "../game/upgrades.ts";
 import type { RaceOutcome } from "../game/progression.ts";
 
-export type Screen = "menu" | "garage" | "race" | "results" | "onboarding";
+export type Screen = "menu" | "garage" | "race" | "results" | "onboarding" | "settings";
 
 export interface CarRow {
   id: string;
@@ -126,6 +126,7 @@ export function menuHtml(m: UiModel): string {
      <div class="menu-actions">
        <button class="ghost" data-action="garage">Open garage</button>
        <button class="ghost" data-action="howto">How to Play</button>
+       <button class="ghost" data-action="settings">Settings</button>
      </div>
     </div>`;
 }
@@ -253,6 +254,33 @@ export function onboardingHtml(): string {
         </div>
         <div class="onboarding-actions">
           <button class="primary" data-action="close-onboarding">Got it — Start Racing</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/** Settings screen. */
+export function settingsHtml(): string {
+  return `
+    <div class="screen screen-settings">
+      <div class="settings-panel">
+        <div class="settings-title">Settings</div>
+        <div class="settings-body">
+          <div class="setting-row">
+            <span>Key bindings</span>
+            <span class="setting-value">WASD / Arrows · Space handbrake · R restart</span>
+          </div>
+          <div class="setting-row">
+            <span>Colorblind mode</span>
+            <span class="setting-value">Off</span>
+          </div>
+          <div class="setting-row">
+            <span>HUD size</span>
+            <span class="setting-value">Normal</span>
+          </div>
+        </div>
+        <div class="settings-actions">
+          <button class="primary" data-action="close-settings">Back to Menu</button>
         </div>
       </div>
     </div>`;

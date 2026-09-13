@@ -13,6 +13,7 @@
 - [ ] Object pool for skid marks and confetti
 
 ## Input
+- [x] Settings screen with key bindings placeholder
 - [ ] Key remap menu (save to localStorage)
 - [ ] Optional on-screen touch controls for mobile demo
 
