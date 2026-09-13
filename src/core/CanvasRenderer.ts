@@ -49,6 +49,7 @@ export class Canvas2DRenderer implements IRenderer {
       skidMarks,
       ghost,
       confettiAgeMs,
+      fps,
     } = scene;
     const w = this.canvas.width / this.dpr;
     const h = this.canvas.height / this.dpr;
@@ -72,6 +73,7 @@ export class Canvas2DRenderer implements IRenderer {
       position,
       total,
       car,
+      fps,
     );
     if (confettiAgeMs !== undefined && confettiAgeMs >= 0) {
       this.drawConfetti(this.ctx, w, h, confettiAgeMs);
@@ -283,6 +285,7 @@ export class Canvas2DRenderer implements IRenderer {
     position?: number,
     total?: number,
     car?: Matter.Body,
+    fps?: number,
   ): void {
     const { ctx } = this;
     ctx.save();
@@ -305,6 +308,9 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.fillText(`NOW ${formatLap(cur)}`, 460, 10);
     if (position !== undefined && total !== undefined) {
       ctx.fillText("P " + position + "/" + total, w - 150, 10);
+    }
+    if (fps !== undefined) {
+      ctx.fillText(`FPS ${Math.round(fps)}`, w - 80, 30);
     }
     ctx.fillText(trackName, 12, 30);
 

@@ -7,6 +7,7 @@
 - [ ] Re-balance one unfair track
 
 ## Performance
+- [x] Add FPS counter to HUD for perf monitoring
 - [ ] Profile on low-end laptop; ensure 60fps
 - [ ] Cap particles / skid marks
 - [ ] Object pool for skid marks and confetti

@@ -98,6 +98,9 @@ export class Game {
   private clockMs = 0;
   private lastFrameMs = 0;
   private frameHandle: number | null = null;
+  private fps = 0;
+  private fpsAcc = 0;
+  private fpsFrames = 0;
 
   private arena: Arena;
   private playerRace: RaceState;
@@ -174,6 +177,13 @@ export class Game {
     const delta = (nowMs - this.lastFrameMs) / 1000;
     this.lastFrameMs = nowMs;
     this.loop.update(delta);
+    this.fpsAcc += delta;
+    this.fpsFrames++;
+    if (this.fpsAcc >= 0.5) {
+      this.fps = this.fpsFrames / this.fpsAcc;
+      this.fpsAcc = 0;
+      this.fpsFrames = 0;
+    }
     this.renderScene();
     this.frameHandle = requestAnimationFrame((t) => this.frame(t));
   }
@@ -399,6 +409,7 @@ export class Game {
       skidMarks: this.skid.marks,
       ghost: this.ghost,
       confettiAgeMs: this.confettiStartMs ? this.clockMs - this.confettiStartMs : undefined,
+      fps: this.fps,
     };
     this.renderer.render(scene);
   }

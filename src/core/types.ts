@@ -30,6 +30,8 @@ export interface RenderScene {
   ghost?: import("../race/Ghost.ts").Ghost;
   /** ms since race finished; >0 triggers confetti. */
   confettiAgeMs?: number;
+  /** Approx FPS for debug overlay. */
+  fps?: number;
 }
 
 export interface IRenderer {
