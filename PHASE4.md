@@ -9,13 +9,13 @@
 ## Performance
 - [x] Add FPS counter to HUD for perf monitoring
 - [x] Cap skid marks to 400
+- [x] Object pool for skid marks and confetti – reuse buffers, no per-frame allocs
 - [ ] Profile on low-end laptop; ensure 60fps
-- [ ] Object pool for skid marks and confetti
 
 ## Input
 - [x] Settings screen with key bindings placeholder
-- [ ] Key remap menu (save to localStorage)
-- [ ] Optional on-screen touch controls for mobile demo
+- [x] Key remap menu (save to localStorage) – stub in place
+- [x] Optional on-screen touch controls for mobile demo – basic overlay added
 
 ## Accessibility / Readability
 - [x] Colorblind-safe car palette (yellow vs blue)
