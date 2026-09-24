@@ -1,12 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { migrate, newSave } from "../../src/game/save.ts";
+import { defaultSettings } from "../../src/game/settings.ts";
 
 /**
- * Save-migration is exercised here because bestGhosts is a new field (v2).
- * migrate() must: (a) tolerate a v1 save that has no bestGhosts, and
- * (b) repair a corrupt ghost timeline without throwing.
+ * Save-migration is exercised here because bestGhosts (v2) and `settings` (v3)
+ * are new fields. migrate() must: (a) tolerate a legacy save missing those
+ * fields, (b) repair a corrupt ghost timeline / settings without throwing, and
+ * (c) stamp every migrated payload schema-current.
  */
-describe("Save migration — schema bump (v1 -> v2)", () => {
+describe("Save migration — schema bump (v1 -> v3)", () => {
   it("fills a missing bestGhosts from a v1 save with an empty map", () => {
     const v1 = {
       version: 1,
@@ -19,8 +21,9 @@ describe("Save migration — schema bump (v1 -> v2)", () => {
       clearedTracks: [],
     };
     const out = migrate(v1);
-    expect(out.version).toBe(2);
+    expect(out.version).toBe(3);
     expect(out.bestGhosts).toEqual({}); // safe default, no crash
+    expect(out.settings).toEqual(defaultSettings()); // prefs default, no crash
     expect(out.credits).toBe(42); // other fields survive
   });
 
@@ -65,11 +68,11 @@ describe("Save migration — schema bump (v1 -> v2)", () => {
     expect(g[1].x).toBe(1);
   });
 
-  it("null / non-object input migrates to a fresh save (v2)", () => {
-    expect(migrate(null).version).toBe(2);
-    expect(migrate("garbage").version).toBe(2);
-    expect(migrate({}).version).toBe(2);
+  it("null / non-object input migrates to a fresh save (v3)", () => {
+    expect(migrate(null).version).toBe(3);
+    expect(migrate("garbage").version).toBe(3);
+    expect(migrate({}).version).toBe(3);
     // A brand-new save is always schema-current.
-    expect(newSave().version).toBe(2);
+    expect(newSave().version).toBe(3);
   });
 });

@@ -26,7 +26,9 @@ Phase 2 ✅ Progression loop — stats/upgrades data-driven, credits economy, ve
 
 Phase 3 🚧 IN PROGRESS — Content scale + polish. Shipped & headless-verified: 6 tracks, 3 car classes incl. 1/8 Brawler, content QA guard, skid marks model, audio event seam, ghost replay + save v2 migration, fixed camera follow. Remaining for browser confirmation: curved curbs, tire smoke, finish confetti, minimap, ghost-line visual render, WebAudio playback, onboarding how-to, track visualizer/JSON import.
 
-Next action: **Finish Phase 3 visual/juice in-browser, then Phase 4 — tuning pass, 60fps perf, input remap, accessibility, production build & public demo URL.**
+Phase 4 🚧 Feel tuning + release demo. Done & headless-verified so far: FPS HUD, 400-mark skid cap, **a real Settings screen** — key remap (click a binding, press a key; captured live, persisted to the versioned save v3, applied to the `KeyboardInput` KeyMap), a **colorblind mode** toggle (amber/blue ↔ deuteranopia-safe orange/blue, driven through the renderer), and **sm/md/lg HUD sizing** — with `game/settings.ts` + 13 tests in `test/game/Settings.test.ts`. Still pending browser confirmation: 60fps on a low-end machine, the visuals above, key-remap UX in the DOM, and **deploy + first-run video**.
+
+Next action: **Confirm the settings visuals in a browser, then Phase 4 release — tuning pass, 60fps profiling + pooling, deploy to a static host, and a 60-sec video.**
 
 ## Why this stack (short version)
 

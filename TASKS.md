@@ -34,9 +34,14 @@ Generated from `roadmap.md` Phase 3 → Phase 4.
 - [ ] GC-friendly object reuse for marks, particles, ghost samples
 
 ### Input & Accessibility
-- [ ] Key remap menu
-- [ ] Optional on-screen pointer controls for demo
-- [ ] Colorblind-aware HUD colors, readable at small sizes
+- [x] Key remap menu — click a binding, press a key to rebind; persisted to the
+   versioned save (v3) and applied live to `KeyboardInput`. Tested in
+  `Settings.test.ts`.
+- [x] Colorblind-aware car palette — a `std`↔`cb` toggle (amber/blue → deuteranopia-
+  safe orange/blue) driven through the renderer theme.
+- [x] Readable HUD size — sm/md/lg scaling of the canvas HUD + minimap, persisted.
+- [ ] Optional on-screen pointer/touch controls for a mobile demo — NOT done;
+   keyboard-only for now (the `IInput` seam exists). Deferred.
 
 ### Release
 - [ ] Production build `npm run build` passes typecheck/lint/tests

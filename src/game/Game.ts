@@ -7,7 +7,7 @@
  */
 import { FixedTimestepLoop } from "../core/FixedTimestepLoop.ts";
 import { Camera } from "../core/Camera.ts";
-import { KeyboardInput, type IInput, type InputState } from "../core/Input.ts";
+import { KeyboardInput, KEY_ACTIONS, type IInput, type InputState, type KeyAction } from "../core/Input.ts";
 import {
   createArena,
   stepCar,
@@ -57,6 +57,15 @@ import {
   type ResultsView,
 } from "../ui/ui.ts";
 import type { Vec2 } from "../core/vec.ts";
+import { ACTION_LABELS } from "../core/theme.ts";
+import {
+  defaultSettings,
+  nextHudSize,
+  rebindSetting,
+  toggleColorMode,
+  type Settings,
+} from "./settings.ts";
+import type { SettingsView } from "../ui/ui.ts";
 
 /** The driver closure's input: a readable snapshot of the body. */
 interface BodyState {
@@ -117,6 +126,10 @@ export class Game {
   private prevLap = 0;
   private ghost: Ghost = [];
   private confettiStartMs = 0;
+  private settings: Settings;
+     /** The action awaiting a key capture, or null when not rebinding. */
+  private rebinding: KeyAction | null = null;
+  private onRebindKeyBound: (e: KeyboardEvent) => void;
 
   constructor(
     public readonly prog: Progression,
@@ -135,9 +148,16 @@ export class Game {
     this.loop = new FixedTimestepLoop(1 / 120, (dt) => this.onStep(dt));
 
     this.onClickBound = (e: Event) => this.onClick(e);
+    this.onRebindKeyBound = (e: KeyboardEvent) => this.onRebindKey(e);
 
     this.skid = createSkid();
     this.audio = deps.audio ?? createAudio();
+
+        // Load persisted UI prefs, or start from defaults, and seed the sim seams.
+    this.settings = this.prog.settings ?? defaultSettings();
+    this.prog.setSettings(this.settings);
+    this.input.setKeyMap(this.settings.keyMap);
+    this.applyTheme();
 
     // Preview arena so the first render has something to draw.
     this.arena = createArena(
@@ -155,6 +175,7 @@ export class Game {
   /** Wire input + resize and start the render loop on the menu screen. */
   start(): void {
     this.input.attach(document.body);
+     document.addEventListener("keydown", this.onRebindKeyBound, true);
     window.addEventListener("resize", () => this.onResize());
     window.addEventListener("keydown", (e) => {
       if (e.code === "KeyR" && this.screen === "race") this.startRace();
@@ -169,6 +190,7 @@ export class Game {
 
   stop(): void {
     this.input.detach();
+     document.removeEventListener("keydown", this.onRebindKeyBound, true);
     this.uiRoot.removeEventListener("click", this.onClickBound);
     if (this.frameHandle !== null) cancelAnimationFrame(this.frameHandle);
     this.frameHandle = null;
@@ -222,7 +244,7 @@ export class Game {
 
   private showSettings(): void {
     this.screen = "settings";
-    this.uiRoot.innerHTML = settingsHtml();
+    this.uiRoot.innerHTML = settingsHtml(this.settingsView());
   }
 
   private currentTrack = (): TrackDef =>
@@ -426,7 +448,7 @@ export class Game {
     const target = e.target as HTMLElement | null;
     if (target === null) return;
     const el = target.closest(
-      "[data-action],[data-selectcar],[data-selecttrack],[data-buy],[data-switchcar]",
+      "[data-action],[data-selectcar],[data-selecttrack],[data-buy],[data-switchcar],[data-bind]",
     ) as HTMLElement | null;
     if (el === null) return;
     this.audio.play("click");
@@ -440,6 +462,18 @@ export class Game {
     else if (action === "close-onboarding") this.showMenu();
     else if (action === "settings") this.showSettings();
     else if (action === "close-settings") this.showMenu();
+    else if (action === "toggle-colorblind")
+      this.commitSettings({
+         ...this.settings,
+        colorMode: toggleColorMode(this.settings.colorMode),
+       });
+    else if (action === "cycle-hud")
+      this.commitSettings({
+         ...this.settings,
+        hudSize: nextHudSize(this.settings.hudSize),
+       });
+    else if (action === "reset-settings")
+      this.commitSettings({ ...this.settings, keyMap: defaultSettings().keyMap });
 
     const selCar = el.getAttribute("data-selectcar");
     if (selCar !== null) {
@@ -460,8 +494,19 @@ export class Game {
       this.prog.buyUpgrade(this.prog.selectedCarId, buySlot as SlotId);
 
     // Re-render whatever screen we're on so a just-made purchase shows up.
+     // A "rebind" button arms a capture; onRebindKey binds the next key. Any
+     // other click cancels a pending capture so a stray key can't remap.
+    const bind = el.getAttribute("data-bind");
+    if (bind !== null) {
+      this.rebinding = bind as KeyAction;
+      this.showSettings();
+        return;
+         }
+    if (this.rebinding !== null) this.rebinding = null;
+
     if (this.screen === "menu") this.showMenu();
     else if (this.screen === "garage") this.showGarage();
+    else if (this.screen === "settings") this.showSettings();
   }
 
   private uiModel(): UiModel {
@@ -515,6 +560,56 @@ export class Game {
   }
 
   // --- persistence -------------------------------------------------------
+
+   /** Push the current theme to the renderer (palette + HUD size). */
+  private applyTheme(): void {
+    this.renderer.setSettings?.(this.settings.colorMode, this.settings.hudSize);
+     }
+
+      /** Build the settings UI view model from live prefs + capture state. */
+  private settingsView(): SettingsView {
+    return {
+      colorMode: this.settings.colorMode,
+      hudSize: this.settings.hudSize,
+      bindings: KEY_ACTIONS.map((a) => ({
+        action: a,
+        label: ACTION_LABELS[a],
+        keys: this.settings.keyMap[a],
+         })),
+      rebinding: this.rebinding !== null,
+      rebindingAction: this.rebinding,
+         };
+       }
+
+       /** Persist a settings change, then refresh the input + renderer seams. */
+  private commitSettings(next: Settings): void {
+    this.settings = next;
+    this.prog.setSettings(next);
+    this.input.setKeyMap(next.keyMap);
+    this.applyTheme();
+    this.save();
+       }
+
+       /**
+        * Capture-phase keydown, active only while rebinding: the next plain key
+        * codes a new binding (modifier combos are ignored; Escape cancels). The
+        * event is swallowed so the driver input never sees a key we just assigned.
+        */
+    private onRebindKey(e: KeyboardEvent): void {
+    if (this.rebinding === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.code === "Escape") {
+      this.rebinding = null;
+      this.showSettings();
+      return;
+          }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const action = this.rebinding;
+    this.rebinding = null;
+    if (action === null) return;
+    this.commitSettings(rebindSetting(this.settings, action, e.code));
+       }
 
   private save(): void {
     this.store.save(this.prog.snapshot());

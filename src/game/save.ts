@@ -2,6 +2,7 @@ import { freshUpgrades, type OwnedUpgrades } from "./upgrades.ts";
 import { carClasses } from "./cars.ts";
 import { tracks } from "../track/tracks.ts";
 import type { Ghost, GhostPoint } from "../race/Ghost.ts";
+import { defaultSettings, migrateSettings, type Settings } from "./settings.ts";
 
 /**
  * A save is a small, versioned snapshot. `version` + `migrate()` let us change the
@@ -9,7 +10,7 @@ import type { Ghost, GhostPoint } from "../race/Ghost.ts";
  * (ISaveStore) so the pure logic (migrate/newSave/serialize) is testable away
  * from the browser, with a LocalStorage implementation for the real game.
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface SaveData {
   version: number;
@@ -26,6 +27,8 @@ export interface SaveData {
   selectedTrack: string;
   /** Tracks you've cleared at least once (progression gate). */
   clearedTracks: string[];
+    /** Persistent UI prefs: key bindings, colour-blind mode, HUD size. */
+  settings: Settings;
 }
 
 /** The store seam. `save` must be synchronous for the demo (localStorage). */
@@ -46,6 +49,7 @@ export function newSave(): SaveData {
     selectedCar: firstCar.id,
     selectedTrack: tracks[0].id,
     clearedTracks: [],
+    settings: defaultSettings(),
   };
 }
 
@@ -110,6 +114,9 @@ export function migrate(input: unknown): SaveData {
   ) {
     data.selectedTrack = raw.selectedTrack;
   }
+   // UI prefs ride the same save; a legacy save that lacks them keeps defaults.
+  if (raw.settings !== undefined)
+    data.settings = migrateSettings(raw.settings);
   data.version = SAVE_VERSION;
   return data;
 }

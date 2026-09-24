@@ -7,6 +7,12 @@ import type { SkidMark } from "./SkidMarks.ts";
 import type { Ghost } from "../race/Ghost.ts";
 import { CAR_LENGTH, CAR_WIDTH } from "./tuning.ts";
 import { formatLap, currentLapTimeMs } from "../race/RaceState.ts";
+import {
+  carPalette,
+  hudScaleOf,
+  type ColorMode,
+  type HudSize,
+} from "./theme.ts";
 
 /**
  * Canvas2D top-down renderer. Draws the world in world-space via the camera,
@@ -16,12 +22,21 @@ import { formatLap, currentLapTimeMs } from "../race/RaceState.ts";
 export class Canvas2DRenderer implements IRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
+   /** Presentation theme, driven by the persisted Settings. */
+  private colorMode: ColorMode = "std";
+  private hudScale = 1;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
     if (ctx === null) throw new Error("2D context unavailable");
     this.ctx = ctx;
   }
+
+   /** Apply the persisted presentation theme (palette + HUD size). */
+  setSettings(colorMode: ColorMode, hudSize: HudSize): void {
+    this.colorMode = colorMode;
+    this.hudScale = hudScaleOf(hudSize);
+     }
 
   resize(
     width: number,
@@ -238,12 +253,13 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.lineWidth = 1;
     const w = CAR_WIDTH * cam.zoom;
     const l = CAR_LENGTH * cam.zoom * 0.9;
+    const rival = carPalette(this.colorMode).rival;
     for (const r of rivals) {
       const p = cam.toScreen({ x: r.position.x, y: r.position.y });
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(r.angle);
-      ctx.fillStyle = "#4aa3ff";
+      ctx.fillStyle = rival;
       this.roundRect(-l / 2, -w / 2, l, w, 2 * cam.zoom);
       ctx.fill();
       ctx.stroke();
@@ -260,14 +276,15 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.rotate(car.angle); // Matter.js angle: 0 = facing +x, which is forward.
     const w = CAR_WIDTH * cam.zoom;
     const l = CAR_LENGTH * cam.zoom;
-    ctx.fillStyle = "#f5c542";
+    const pal = carPalette(this.colorMode);
+    ctx.fillStyle = pal.player;
     ctx.strokeStyle = "#000";
     ctx.lineWidth = 2;
     this.roundRect(-l / 2, -w / 2, l, w, 3 * cam.zoom);
     ctx.fill();
     ctx.stroke();
     // nose marker (fore)
-    ctx.fillStyle = "#ffe9a8";
+    ctx.fillStyle = pal.nose;
     ctx.fillRect(l * 0.1, -w * 0.3, l * 0.15, w * 0.6);
     ctx.restore();
   }
@@ -288,11 +305,12 @@ export class Canvas2DRenderer implements IRenderer {
     fps?: number,
   ): void {
     const { ctx } = this;
+    const s = this.hudScale;
     ctx.save();
-    ctx.font = "16px system-ui, sans-serif";
+    ctx.font = `${16 * s}px system-ui, sans-serif`;
     ctx.textBaseline = "top";
     ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillRect(0, 0, w, 42);
+    ctx.fillRect(0, 0, w, 42 * s);
     ctx.fillStyle = "#fff";
 
     const kmh = Math.round(Math.abs(speed) * 0.6);
@@ -333,8 +351,8 @@ export class Canvas2DRenderer implements IRenderer {
     w: number,
   ): void {
     const pad = 12;
-    const mapW = 160;
-    const mapH = 100;
+    const mapW = Math.round(160 * this.hudScale);
+    const mapH = Math.round(100 * this.hudScale);
     const mapX = w - mapW - pad;
     const mapY = pad;
 

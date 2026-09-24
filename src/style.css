@@ -444,3 +444,75 @@ button {
   white-space: nowrap;
   pointer-events: auto;
 }
+
+/* SETTINGS --------------------------------------------------------------- */
+.screen-settings {
+  background: rgba(8, 14, 11, 0.86);
+  border: 1px solid #2a3830;
+  border-radius: 16px;
+  padding: 28px 32px;
+  backdrop-filter: blur(3px);
+}
+
+.settings-title {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  margin: 0 0 20px;
+  color: #ffe9a8;
+}
+
+.setting-group {
+  margin-bottom: 22px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 10px 0;
+  font-size: 15px;
+  color: #dfeee6;
+}
+
+.setting-row.key-row .key-btn {
+  min-width: 220px;
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+.key-btn {
+  background: #14201a;
+  border: 1px dashed #3a4f45;
+  border-radius: 8px;
+  padding: 7px 14px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.key-btn:hover {
+  border-color: #46b38a;
+}
+
+.key-btn.capturing {
+  border-color: #ffb347;
+  color: #ffb347;
+  animation: pulse 0.8s infinite alternate;
+}
+
+.rebind-hint {
+  margin: 12px 0 4px;
+  font-size: 13px;
+  color: #ffb347;
+  font-weight: 600;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
