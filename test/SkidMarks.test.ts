@@ -83,6 +83,23 @@ describe("SkidMarks.ageMarks", () => {
     ageMarks(s, 0);
     expect(visibleCount(s)).toBe(2);
   });
+
+  it("ages in place, reusing the buffer (GC-friendly, no per-frame alloc)", () => {
+    const s = createSkid();
+    // Mixed alphas so some marks fade this step and some survive.
+    s.marks.push({ x: 0, y: 0, angle: 0, alpha: 0.9 });
+    s.marks.push({ x: 1, y: 0, angle: 0, alpha: 0.1 });
+    s.marks.push({ x: 2, y: 0, angle: 0, alpha: 0.8 });
+    const before = s.marks;
+    ageMarks(s, SKID_LIFETIME * 0.6);
+    // Same array reference: the trail compacts in place rather than via a fresh
+    // allocation each step — the GC-friendliness the hot path relies on.
+    expect(s.marks).toBe(before);
+    // Survivors kept in original order; faded marks dropped.
+    expect(s.marks.length).toBe(2);
+    expect(s.marks[0]!.alpha).toBeCloseTo(0.3, 5);
+    expect(s.marks[1]!.alpha).toBeCloseTo(0.2, 5);
+   });
 });
 
 describe("SkidMarks buffer cap", () => {

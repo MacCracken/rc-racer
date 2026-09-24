@@ -321,7 +321,7 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.fillText(`SPD ${kmh} km/h`, w - 190, h - 40);
 
     // minimap top-right
-    if (car) this.drawMinimap(ctx, track, car, w, h);
+    if (car) this.drawMinimap(ctx, track, car, w);
 
     ctx.restore();
   }
@@ -331,7 +331,6 @@ export class Canvas2DRenderer implements IRenderer {
     track: BuiltTrack,
     car: Matter.Body,
     w: number,
-    h: number,
   ): void {
     const pad = 12;
     const mapW = 160;

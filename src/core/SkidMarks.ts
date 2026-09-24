@@ -111,10 +111,17 @@ export function ageMarks(state: SkidState, dt: number): void {
     state.marks.length = 0;
     return;
   }
-  state.marks = state.marks.filter((m) => {
+  const marks = state.marks;
+  let keep = 0;
+  for (let i = 0; i < marks.length; i++) {
+    const m = marks[i];
     m.alpha -= decay;
-    return m.alpha > 0.02;
-  });
+    if (m.alpha > 0.02) {
+      marks[keep] = m;
+      keep += 1;
+     }
+   }
+  marks.length = keep;
 }
 
 /** Remaining visible mark count. */
