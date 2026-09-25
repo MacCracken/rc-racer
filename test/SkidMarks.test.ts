@@ -102,6 +102,28 @@ describe("SkidMarks.ageMarks", () => {
    });
 });
 
+describe("SkidMarks pooling (GC-friendly hot path)", () => {
+  it("recycles faded marks so a sustained drift allocates nothing new", () => {
+    const s = createSkid();
+    sampleDrift(s, bodyFrom(0, 0, 0, 120, 150), O); // fresh pair, alpha 1
+    const first = s.marks[0]!;
+    ageMarks(s, SKID_LIFETIME); // both expire -> recycled into the pool
+    expect(s.marks.length).toBe(0);
+       // The next lay must reuse a pooled object rather than allocate a new one.
+    sampleDrift(s, bodyFrom(0, 0, 0, 120, 150), O);
+    expect(s.marks).toContain(first);
+      });
+
+  it("recycles evicted marks when the cap is hit", () => {
+    const s = createSkid();
+    for (let i = 0; i < MAX_MARKS + 50; i++)
+      sampleDrift(s, bodyFrom(0, 0, 0, 120, 150), O);
+       // We're capped, so marks were evicted and their objects pooled for reuse.
+    expect(s.marks.length).toBe(MAX_MARKS);
+    expect(s.pool.length).toBeGreaterThan(0);
+      });
+});
+
 describe("SkidMarks buffer cap", () => {
   it("never exceeds MAX_MARKS", () => {
     const s = createSkid();

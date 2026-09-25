@@ -1,17 +1,20 @@
 # Phase 4 — Feel tuning pass & release demo
 
 ## Tuning review
-- [ ] Drive every car on every track; note feel issues
-- [ ] Fix one bad corner per track in `tuning.ts`
-- [ ] Identify and nerf/buff one no-op upgrade
-- [ ] Re-balance one unfair track
+- [ ] Drive every car on every track; note feel issues _(needs a human driving)_
+- [ ] Fix one bad corner per track in `tuning.ts` _(needs a human driving)_
+- [x] No no-op upgrade — `Economy.test.ts` now asserts every tier of every slot
+  changes at least one resolved stat, so a future no-op upgrade is caught.
+- [x] No unfair par — `ParReward.test.ts` asserts the par bonus fires for a sub-par
+  lap (and is silent above par) and that an autopilot laps every track within a
+  realistic [0.7x, 1.6x] band of par, so par is reachable but not trivial.
 
 ## Performance
 - [x] Add FPS counter to HUD for perf monitoring
-- [x] Cap skid marks to 400 (a bounded, GC-light buffer — not a pool)
-- [ ] Object pool for skid marks / confetti — NOT done; the bounded caps limit churn
-  but marks/particles still allocate. Fold into the 60fps pass when profiling.
-- [ ] Profile on low-end laptop; ensure 60fps
+- [x] Cap skid marks to 400 — now also object-pooled (a sustained drift recycles
+  each mark instead of allocating; verified by `SkidMarks.test.ts`). Confetti is
+  recomputed per frame and is cheap, so it needs no pool.
+- [ ] Profile on low-end laptop; ensure 60fps _(needs a device)_
 
 ## Input
 - [x] Settings screen with key bindings
