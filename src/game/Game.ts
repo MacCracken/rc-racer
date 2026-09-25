@@ -120,7 +120,6 @@ export class Game {
   public screen: Screen = "menu";
 
   private onClickBound: (e: Event) => void;
-  private prevMap = new Map<object, Vec2>();
   private skid: SkidState;
   private audio: IAudio;
   private prevLap = 0;
@@ -273,7 +272,6 @@ export class Game {
       [],
     );
     this.racers = [];
-    this.prevMap.clear();
     this.playerRace = new RaceState(this.arena.track, () => this.clockMs);
     this.lastResults = null;
     this.clockMs = 0;
@@ -328,9 +326,13 @@ export class Game {
 
     // Player.
     const p = this.arena.cars[0]!;
-    this.prevMap.set(p.body, this.prevOf(p.body));
+     // Capture the pre-step pose so the gate test sees this tick's
+     // (prev -> cur) segment. Feeding the *previous* stored pose (the old
+     // prevMap) frozen the segment at [grid, now] forever, so no real
+     // start/finish crossing ever registered.
+    const prevP: Vec2 = { x: p.body.position.x, y: p.body.position.y };
     this.stepBody(p, this.input.sample(), dt);
-    this.playerRace.update(this.prevOf(p.body), p.body.position);
+    this.playerRace.update(prevP, p.body.position);
 
     // Tire-smoke trail: lay skids while the player slides, fade them over time.
     sampleDrift(this.skid, p.body, {
@@ -364,14 +366,6 @@ export class Game {
 
   private stepBody(c: ArenaCar, input: InputState, dtS: number): void {
     stepCar(c.body, this.arena.walls, this.arena.track, input, c.stats, dtS);
-  }
-
-  // Store the position *before* stepping so the 2-point gate test sees a
-  // (prev, cur) pair across the tick.
-  private prevOf(b: { position: Vec2 }): Vec2 {
-    return (
-      this.prevMap.get(b) ?? ({ x: b.position.x, y: b.position.y } as Vec2)
-    );
   }
 
   private followCamera(dt: number): void {

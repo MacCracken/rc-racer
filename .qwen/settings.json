@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(npx *)",
+      "Bash(cd *)",
+      "Bash(tail *)",
+      "Bash(mv *)",
+      "Bash(rm *)",
+      "Bash(sed *)",
+      "Bash(echo *)",
+      "Bash(ls *)"
     ]
   },
   "$version": 4
