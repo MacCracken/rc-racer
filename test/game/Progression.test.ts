@@ -112,6 +112,42 @@ describe("Progression — earn / spend / record", () => {
     expect(p.unlockCar("buggy")).toBe(false);
     expect(p.credits).toBe(100);
   });
+
+  it("cannot select (and so race) a car it doesn't own", () => {
+    const p = Progression.fresh();
+    expect(p.selectCar("brawler")).toBe(false);
+    expect(p.selectedCarId).toBe("street-sedan");
+    expect(p.selectCar("street-sedan")).toBe(true);
+  });
+
+  it("cannot buy upgrades for a car it doesn't own", () => {
+    const p = Progression.fresh();
+    p.setCredits(1000);
+    expect(p.buyUpgrade("buggy", "engine")).toBe(false);
+    expect(p.credits).toBe(1000);
+  });
+
+  it("a non-positive lap time never becomes the record (nothing could beat it)", () => {
+    const p = Progression.fresh();
+    p.recordRace({
+      trackId: "overture",
+      carId: "street-sedan",
+      laps: 3,
+      bestLapMs: 17000,
+      finished: true,
+    });
+    const out = p.recordRace({
+      trackId: "overture",
+      carId: "street-sedan",
+      laps: 3,
+      bestLapMs: -35000,
+      finished: true,
+      bestLapGhost: [],
+    });
+    expect(out.newRecord).toBe(false);
+    expect(p.bestLap("overture")).toBe(17000);
+    expect(out.creditsEarned).toBeGreaterThan(0); // finishing still pays
+  });
 });
 
 describe("Progression — upgrades", () => {

@@ -4,6 +4,7 @@ import {
   garageHtml,
   resultsHtml,
   raceOverlay,
+  settingsHtml,
   type UiModel,
   type ResultsView,
 } from "../src/ui/ui.ts";
@@ -105,5 +106,39 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
   it("a new-record result shows the record banner", () => {
     const html = resultsHtml(resultsView({ newRecord: true, newBest: 3800 }));
     expect(html).toContain("NEW RECORD");
+  });
+
+  it("escapes markup in names, including '>'", () => {
+    const m = model();
+    m.cars[0].name = "<b>Car</b> & co";
+    expect(menuHtml(m)).toContain("&lt;b&gt;Car&lt;/b&gt; &amp; co");
+  });
+
+  it("results never print a raw non-finite lap time", () => {
+    const html = resultsHtml({ ...resultsView(), bestLapMs: Infinity });
+    expect(html).not.toContain("Infinity");
+    expect(html).toContain("--:--.---");
+  });
+
+  it("names a newly affordable car without claiming it's unlocked", () => {
+    const html = resultsHtml({
+      ...resultsView({ unlockedCar: "buggy" }),
+      unlockedCarName: "1/10 Buggy",
+    });
+    expect(html).toContain("1/10 Buggy");
+    expect(html).not.toContain("Unlocked:");
+  });
+
+  it("settings explain a refused key while capture stays armed", () => {
+    const html = settingsHtml({
+      colorMode: "std",
+      hudSize: "md",
+      bindings: [{ action: "handbrake", label: "Handbrake", keys: ["Space"] }],
+      rebinding: true,
+      rebindingAction: "handbrake",
+      notice: "Q is reserved — press another key",
+    });
+    expect(html).toContain("Q is reserved");
+    expect(html).toContain("Press a key…");
   });
 });

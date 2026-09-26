@@ -7,6 +7,7 @@
 import type { StatBar } from "../game/upgrades.ts";
 import type { RaceOutcome } from "../game/progression.ts";
 import { keyLabel, type ColorMode, type HudSize } from "../core/theme.ts";
+import { formatLap } from "../race/RaceState.ts";
 
 export type Screen =
      | "menu"
@@ -63,6 +64,8 @@ export interface ResultsView {
   total: number;
   bestLapMs: number;
   outcome: RaceOutcome;
+  /** Display name of `outcome.unlockedCar` (falls back to its id). */
+  unlockedCarName?: string;
 }
 
 /** A single rebindable key binding, as shown in the settings panel. */
@@ -80,6 +83,8 @@ export interface SettingsView {
     /** True while a key capture is pending, and which action is being set. */
   rebinding: boolean;
   rebindingAction: string | null;
+  /** Why the last key press was refused (e.g. a reserved key), if any. */
+  notice?: string;
 }
 
 const HUD_SIZE_LABEL: Record<HudSize, string> = {
@@ -93,6 +98,8 @@ const esc = (s: string): string =>
     switch (c) {
       case "<":
         return "&lt;";
+      case ">":
+        return "&gt;";
       case "&":
         return "&amp;";
       case '"':
@@ -235,12 +242,13 @@ export function garageHtml(m: UiModel): string {
 export function resultsHtml(view: ResultsView): string {
   const { outcome, position, total, bestLapMs } = view;
   const p = `P${position} / ${total}`;
-  const timeStr = `${(bestLapMs / 1000).toFixed(2)}s`;
+  const timeStr = formatLap(bestLapMs);
   const record = outcome.newRecord
-      ? `<div class="new-record">★ NEW RECORD · ${(outcome.newBest / 1000).toFixed(2)}s</div>`
+      ? `<div class="new-record">★ NEW RECORD · ${formatLap(outcome.newBest)}</div>`
      : "";
+  // `unlockedCar` is a car you can now *afford*; buying it is still your call.
   const unlocked = outcome.unlockedCar
-      ? `<div class="unlocks">★ Unlocked: ${esc(outcome.unlockedCar)}</div>`
+      ? `<div class="unlocks">★ New car affordable: ${esc(view.unlockedCarName ?? outcome.unlockedCar)} — unlock it from the menu</div>`
       : "";
   return `
     <div class="screen screen-results">
@@ -310,7 +318,7 @@ export function settingsHtml(v: SettingsView): string {
       .join("");
   const cbOn = v.colorMode === "cb";
   const captureHint = v.rebinding
-      ? '<div class="rebind-hint">Press any key to assign · Esc cancels</div>'
+      ? `<div class="rebind-hint">${esc(v.notice ?? "Press any key to assign · Esc cancels")}</div>`
       : "";
   return `
        <div class="screen screen-settings">

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { RaceState, formatLap } from "../src/race/RaceState.ts";
+import {
+  RaceState,
+  currentLapTimeMs,
+  formatLap,
+} from "../src/race/RaceState.ts";
 import { buildTrack, type TrackDef } from "../src/track/Track.ts";
 import { overture, tracks } from "../src/track/tracks.ts";
 import type { Vec2 } from "../src/core/vec.ts";
@@ -47,6 +51,60 @@ describe("RaceState lap detection", () => {
     expect(race.lapTimesMs.length).toBeGreaterThan(0);
     expect(Number.isFinite(race.bestLapMs)).toBe(true);
        });
+
+  it("holds the lap clock at zero until the car first moves off the grid", () => {
+    const { track, race, advance } = makeRace();
+    const p = track.start.pos;
+    let now = 0;
+    for (let i = 0; i < 100; i++) {
+      now = advance(10); // a full second parked on the line
+      race.update(p, p);
+    }
+    expect(currentLapTimeMs(race, now)).toBe(0);
+    now = advance(10);
+    race.update(p, { x: p.x + 1, y: p.y }); // first movement
+    expect(currentLapTimeMs(race, now)).toBe(10); // timed from the last parked tick
+  });
+
+  it("stamps finishMs when the final lap completes", () => {
+    const { track, race, advance } = makeRace();
+    const cl = track.centerLine;
+    expect(race.finishMs).toBe(Infinity);
+    for (let pass = 0; pass <= track.laps + 1 && !race.finished; pass++) {
+      for (let i = 1; i <= cl.length; i++) {
+        advance(50);
+        race.update(cl[i - 1]!, cl[i % cl.length]!);
+      }
+    }
+    expect(race.finished).toBe(true);
+    expect(Number.isFinite(race.finishMs)).toBe(true);
+  });
+
+  it("progress grows monotonically around the lap and across the line", () => {
+    const { track, race, advance } = makeRace();
+    const cl = track.centerLine;
+    let last = race.progress(cl[0]!);
+    expect(last).toBe(0);
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i <= cl.length; i++) {
+        const cur = cl[i % cl.length]!;
+        advance(50);
+        race.update(cl[i - 1]!, cur);
+        const p = race.progress(cur);
+        expect(p).toBeGreaterThan(last);
+        last = p;
+      }
+    }
+    expect(race.lap).toBe(2);
+    // Two laps done = two lap lengths of centerline, not a lap count proxy.
+    let lapLength = 0;
+    for (let i = 0; i < cl.length; i++) {
+      const a = cl[i]!;
+      const b = cl[(i + 1) % cl.length]!;
+      lapLength += Math.hypot(b.x - a.x, b.y - a.y);
+    }
+    expect(last).toBeCloseTo(2 * lapLength, 6);
+  });
 
   it("does not bank a lap on a back-and-forth jiggle at a single gate", () => {
     const { track, race } = makeRace();

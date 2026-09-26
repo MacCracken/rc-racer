@@ -1,7 +1,12 @@
-import { freshUpgrades, type OwnedUpgrades } from "./upgrades.ts";
+import {
+  freshUpgrades,
+  maxTierFor,
+  SLOTS,
+  type OwnedUpgrades,
+} from "./upgrades.ts";
 import { carClasses } from "./cars.ts";
 import { tracks } from "../track/tracks.ts";
-import type { Ghost, GhostPoint } from "../race/Ghost.ts";
+import { capGhost, type Ghost, type GhostPoint } from "../race/Ghost.ts";
 import { defaultSettings, migrateSettings, type Settings } from "./settings.ts";
 
 /**
@@ -68,29 +73,37 @@ export function migrate(input: unknown): SaveData {
       (id): id is string =>
         typeof id === "string" && carClasses.some((c) => c.id === id),
     );
-    if (valid.length > 0) data.ownedCars = valid;
+    if (valid.length > 0) data.ownedCars = [...new Set(valid)];
   }
   if (raw.upgrades && typeof raw.upgrades === "object") {
     for (const [car, up] of Object.entries(
       raw.upgrades as Record<string, unknown>,
     )) {
+      if (!carClasses.some((c) => c.id === car)) continue;
       if (typeof up === "object" && up !== null) {
-        data.upgrades[car] = { ...freshUpgrades(), ...(up as OwnedUpgrades) };
+        data.upgrades[car] = coerceUpgrades(up as Record<string, unknown>);
       }
     }
   }
+  // A stored best lap must be a real, positive time. Anything else (e.g. the
+  // negative "record" a stale race clock once produced) is dropped along with
+  // the ghost recorded beside it, so the track's record can be set again.
+  const badRecords = new Set<string>();
   if (raw.bestLaps && typeof raw.bestLaps === "object") {
     for (const [t, ms] of Object.entries(
       raw.bestLaps as Record<string, unknown>,
     )) {
-      if (typeof ms === "number" && isFinite(ms)) data.bestLaps[t] = ms;
+      if (typeof ms === "number" && isFinite(ms) && ms > 0)
+        data.bestLaps[t] = ms;
+      else badRecords.add(t);
     }
   }
   if (raw.bestGhosts && typeof raw.bestGhosts === "object") {
     for (const [t, pts] of Object.entries(
       raw.bestGhosts as Record<string, unknown>,
     )) {
-      if (Array.isArray(pts)) data.bestGhosts[t] = coerceGhost(pts);
+      if (Array.isArray(pts) && !badRecords.has(t))
+        data.bestGhosts[t] = coerceGhost(pts);
     }
   }
 
@@ -100,14 +113,15 @@ export function migrate(input: unknown): SaveData {
         typeof t === "string" && tracks.some((x) => x.id === t),
     );
   }
-  if (
+  // Only an owned car can be the selected one; otherwise fall back to the
+  // first owned car rather than racing a car that was never bought.
+  data.selectedCar =
     typeof raw.selectedCar === "string" &&
-    carClasses.some((c) => c.id === raw.selectedCar)
-  ) {
-    data.selectedCar = raw.selectedCar;
-    data.upgrades[data.selectedCar] =
-      data.upgrades[data.selectedCar] ?? freshUpgrades();
-  }
+    data.ownedCars.includes(raw.selectedCar)
+      ? raw.selectedCar
+      : data.ownedCars[0];
+  data.upgrades[data.selectedCar] =
+    data.upgrades[data.selectedCar] ?? freshUpgrades();
   if (
     typeof raw.selectedTrack === "string" &&
     tracks.some((x) => x.id === raw.selectedTrack)
@@ -148,25 +162,45 @@ function coerceGhost(raw: unknown): GhostPoint[] {
     });
     last = t;
   }
-  return out.sort((a, b) => a.t - b.t);
+  return capGhost(out.sort((a, b) => a.t - b.t));
+}
+
+/** Owned tier counts, as whole numbers within each slot's tier range. */
+function coerceUpgrades(raw: Record<string, unknown>): OwnedUpgrades {
+  const out = freshUpgrades();
+  for (const slot of SLOTS) {
+    const n = raw[slot];
+    if (typeof n === "number" && Number.isFinite(n))
+      out[slot] = Math.min(maxTierFor(slot), Math.max(0, Math.floor(n)));
+  }
+  return out;
+}
+
+/**
+ * The page's `localStorage`, or null where it is missing or blocked. Merely
+ * reading the property throws a SecurityError in a sandboxed iframe (e.g. a
+ * game-portal embed) or with site data disabled.
+ */
+export function browserStorage(): Storage | null {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Browser-backed store with a guard so a full/blocked storage never throws. */
 export class LocalSaveStore implements ISaveStore {
   constructor(
     private readonly key = "rc-racer-save",
-    private readonly storage: Storage | null = typeof localStorage !==
-    "undefined"
-      ? localStorage
-      : null,
+    private readonly storage: Storage | null = browserStorage(),
   ) {}
 
   load(): SaveData | null {
     if (this.storage === null) return null;
-    const raw = this.storage.getItem(this.key);
-    if (raw === null) return null;
     try {
-      return migrate(JSON.parse(raw));
+      const raw = this.storage.getItem(this.key);
+      return raw === null ? null : migrate(JSON.parse(raw));
     } catch {
       return null;
     }
@@ -189,6 +223,8 @@ export class MemorySaveStore implements ISaveStore {
     return this.data;
   }
   save(data: SaveData): void {
-    this.data = { ...data };
+    // Deep-copied like a real (serializing) store, so later in-memory edits
+    // can't leak into what was "saved".
+    this.data = JSON.parse(JSON.stringify(data)) as SaveData;
   }
 }

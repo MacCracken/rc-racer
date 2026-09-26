@@ -7,7 +7,7 @@ import type { Vec2 } from "./vec.ts";
  */
 export class Camera {
   view: Vec2;
-  /** World px per screen px. */
+  /** Screen px per world px (< 1 zooms out). */
   zoom: number;
   width: number;
   height: number;

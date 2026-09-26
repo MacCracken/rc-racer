@@ -26,8 +26,11 @@ body {
   inset: 0;
   pointer-events: none;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  /* Scroll a panel taller than the window (a short laptop screen) instead of
+     clipping it: flex centering alone cuts off both ends, unreachably. */
+  overflow-y: auto;
+  padding: 16px 0;
+  box-sizing: border-box;
 }
 
 /* A panel is shown only when its screen is active; the rest stay hidden so the
@@ -36,6 +39,9 @@ body {
   position: relative;
   pointer-events: auto;
   width: min(920px, 92vw);
+  /* Centres the panel while it fits; once it overflows the auto margins
+     collapse so it scrolls from its top edge. */
+  margin: auto;
 }
 
 /* The canvas renders behind; the active panel floats centered above it */
@@ -422,10 +428,11 @@ button {
   pointer-events: none;
 }
 
+/* Bottom-left: the canvas HUD owns the top bar and the top-right minimap. */
 .screen-race-overlay .quit {
   position: fixed;
-  top: 14px;
-  right: 14px;
+  bottom: 12px;
+  left: 14px;
   pointer-events: auto;
   background: rgba(8, 14, 11, 0.7);
 }

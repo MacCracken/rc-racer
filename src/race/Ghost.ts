@@ -17,6 +17,20 @@ export interface GhostPoint {
 
 export type Ghost = GhostPoint[];
 
+/**
+ * Most frames a stored ghost keeps. Every ghost rides in the one localStorage
+ * save, so an unbounded one (a slow or idle lap) could blow the quota and stop
+ * *all* progress from saving.
+ */
+export const MAX_GHOST_POINTS = 1500;
+
+/** Evenly thin a ghost to at most `max` frames, keeping the first and last. */
+export function capGhost(g: Ghost, max = MAX_GHOST_POINTS): Ghost {
+  if (g.length <= max || max < 2) return g;
+  const stride = (g.length - 1) / (max - 1);
+  return Array.from({ length: max }, (_, i) => g[Math.round(i * stride)]);
+}
+
 /** Build a ghost from arbitrary samples: sort by time, drop dupes. */
 export function makeGhost(points: GhostPoint[]): Ghost {
   const sorted = [...points].sort((a, b) => a.t - b.t);
@@ -88,5 +102,5 @@ export function recordLap(
     lastHeading = (s.dx || s.dy) !== 0 ? Math.atan2(s.dy, s.dx) : lastHeading;
     pts.push({ t, x: s.x, y: s.y, heading: lastHeading });
   }
-  return makeGhost(pts);
+  return capGhost(makeGhost(pts));
 }

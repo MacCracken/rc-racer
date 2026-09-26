@@ -1,12 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
+  createArena,
   createCarWorld,
   stepCar,
   forwardSpeed,
 } from "../src/physics/MatterCar.ts";
 import { buildTrack } from "../src/track/Track.ts";
-import { dustBowl } from "../src/track/tracks.ts";
-import { defaultCarStats } from "../src/core/tuning.ts";
+import { dustBowl, tracks } from "../src/track/tracks.ts";
+import { CAR_LENGTH, CAR_WIDTH, defaultCarStats } from "../src/core/tuning.ts";
+import type { Vec2 } from "../src/core/vec.ts";
 import type { InputState } from "../src/core/Input.ts";
 
 const idle: InputState = { throttle: 0, brake: 0, steer: 0, handbrake: false };
@@ -80,5 +82,49 @@ describe("MatterCar physics", () => {
     expect(stayedInBand).toBe(true);
     expect(walls.every((w) => w.isStatic)).toBe(true);
     expect(car.isStatic).toBe(false);
+  });
+});
+
+/** Distance from `p` to the closed centerline polyline. */
+function distToCenterLine(cl: Vec2[], p: Vec2): number {
+  let best = Infinity;
+  for (let i = 0; i < cl.length; i++) {
+    const a = cl[i];
+    const b = cl[(i + 1) % cl.length];
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const t = Math.max(
+      0,
+      Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / (abx * abx + aby * aby)),
+    );
+    best = Math.min(best, Math.hypot(p.x - a.x - abx * t, p.y - a.y - aby * t));
+  }
+  return best;
+}
+
+describe("starting grid", () => {
+  it("puts every car of a full field on the asphalt, apart, on every track", () => {
+    for (const def of tracks) {
+      const track = buildTrack(def);
+      const arena = createArena(track, defaultCarStats, [0.8, 0.8, 0.8, 0.8, 0.8]);
+      // The collision band's edge for a car's centre (see stepCar).
+      const limit = track.width / 2 - (Math.max(CAR_LENGTH, CAR_WIDTH) / 2) * 0.7;
+      const pos = arena.cars.map((c) => c.body.position);
+      for (const p of pos)
+        expect(distToCenterLine(track.centerLine, p), def.name).toBeLessThanOrEqual(limit);
+      for (let i = 0; i < pos.length; i++)
+        for (let j = i + 1; j < pos.length; j++)
+          expect(
+            Math.hypot(pos[i].x - pos[j].x, pos[i].y - pos[j].y),
+            `${def.name}: cars ${i} and ${j} overlap`,
+          ).toBeGreaterThan(CAR_LENGTH);
+    }
+  });
+
+  it("keeps the player on pole, on the start line", () => {
+    const track = buildTrack(dustBowl);
+    const arena = createArena(track, defaultCarStats, [0.8, 0.8, 0.8]);
+    expect(arena.cars[0].body.position.x).toBeCloseTo(track.start.pos.x, 6);
+    expect(arena.cars[0].body.position.y).toBeCloseTo(track.start.pos.y, 6);
   });
 });

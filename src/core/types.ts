@@ -33,6 +33,8 @@ export interface RenderScene {
   confettiAgeMs?: number;
    /** Approx FPS for debug overlay. */
   fps?: number;
+   /** Draw the race HUD (timers, position, minimap)? Defaults to true. */
+  hud?: boolean;
 }
 
 export interface IRenderer {

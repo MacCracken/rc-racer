@@ -3,6 +3,8 @@ import {
   recordLap,
   sampleGhost,
   makeGhost,
+  capGhost,
+  MAX_GHOST_POINTS,
   type Ghost,
   type GhostPoint,
 } from "../src/race/Ghost.ts";
@@ -62,6 +64,34 @@ describe("Ghost — best-lap record + replay", () => {
       0,
     );
     expect(g[0].heading).toBeCloseTo(Math.PI / 2, 6);
+  });
+
+  it("capGhost thins evenly to the cap, keeping both ends in order", () => {
+    const long = makeGhost(
+      Array.from({ length: 5000 }, (_, i) => ({
+        t: i * 10,
+        x: i,
+        y: 0,
+        heading: 0,
+      })),
+    );
+    const g = capGhost(long, 100);
+    expect(g.length).toBe(100);
+    expect(g[0].t).toBe(0);
+    expect(g[99].t).toBe(49990);
+    for (let i = 1; i < g.length; i++) expect(g[i].t).toBeGreaterThan(g[i - 1].t);
+    expect(capGhost(lineGhost(), 100)).toEqual(lineGhost()); // short: untouched
+  });
+
+  it("recordLap never stores more than MAX_GHOST_POINTS frames (a slow lap can't bloat the save)", () => {
+    const samples = Array.from({ length: 10_000 }, (_, i) => ({
+      ms: i * 8,
+      x: i,
+      y: 0,
+      dx: 1,
+      dy: 0,
+    }));
+    expect(recordLap(samples, 0).length).toBe(MAX_GHOST_POINTS);
   });
 
   it("makeGhost sorts by time and drops duplicate times", () => {

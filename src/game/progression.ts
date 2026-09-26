@@ -67,9 +67,9 @@ export class Progression {
     this.data.credits = Math.max(0, Math.floor(c));
      }
 
+  /** Select an owned car. An unowned one must be bought via `unlockCar`. */
   selectCar(id: string): boolean {
-    const c = carById(id);
-    if (c === undefined) return false;
+    if (carById(id) === undefined || !this.isCarOwned(id)) return false;
     this.data.selectedCar = id;
     this.data.upgrades[id] = this.data.upgrades[id] ?? freshUpgrades();
     return true;
@@ -111,6 +111,7 @@ export class Progression {
       * owned tier, returning true on success. Never buys beyond the last tier.
       */
   buyUpgrade(carId: string, slot: SlotId): boolean {
+    if (!this.isCarOwned(carId)) return false;
     const owned =
       this.data.upgrades[carId] ??
       (this.data.upgrades[carId] = freshUpgrades());
@@ -153,12 +154,15 @@ export class Progression {
     const par = track?.parLapMs ?? 4000;
 
     const oldBest = this.data.bestLaps[result.trackId] ?? Infinity;
-    const newBest = result.bestLapMs < oldBest ? result.bestLapMs : oldBest;
-    const beat = result.finished && result.bestLapMs < oldBest;
+    // Only a real, positive lap time can set a record: a corrupt one (e.g. a
+    // negative time) would otherwise become a "best" nothing can ever beat.
+    const validLap = isFinite(result.bestLapMs) && result.bestLapMs > 0;
+    const beat = result.finished && validLap && result.bestLapMs < oldBest;
+    const newBest = beat ? result.bestLapMs : oldBest;
 
     const input: RewardInput = {
       parLapMs: par,
-      bestLapMs: isFinite(result.bestLapMs) ? result.bestLapMs : par,
+      bestLapMs: validLap ? result.bestLapMs : par,
       lapsCompleted: result.laps,
       };
     let creditsEarned = 0;

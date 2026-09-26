@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   defaultSettings,
+  isReservedCode,
   migrateSettings,
   rebindSetting,
   nextHudSize,
@@ -10,6 +11,7 @@ import { migrate } from "../../src/game/save.ts";
 import {
   defaultKeyMap,
   inputFrom,
+  KEY_ACTIONS,
   type KeyMap,
 } from "../../src/core/Input.ts";
 import { carPalette, hudScaleOf } from "../../src/core/theme.ts";
@@ -57,6 +59,25 @@ describe("rebinding", () => {
     // The original settings object is not mutated (a new one is returned).
     expect(s.keyMap.steerLeft).toEqual(["KeyA", "ArrowLeft"]);
      });
+
+  it("refuses the game's own keys (R restarts, Q / Esc / Backspace quit)", () => {
+    const s = defaultSettings();
+    for (const code of ["KeyR", "KeyQ", "Escape", "Backspace"]) {
+      expect(isReservedCode(code)).toBe(true);
+      expect(rebindSetting(s, "handbrake", code)).toBe(s); // unchanged
+    }
+    expect(isReservedCode("KeyE")).toBe(false);
+  });
+
+  it("never leaves an action unbound: taking its last key swaps in the old keys", () => {
+    let s = defaultSettings();
+    s = rebindSetting(s, "brake", "KeyW"); // throttle keeps ArrowUp
+    expect(s.keyMap.throttle).toEqual(["ArrowUp"]);
+    s = rebindSetting(s, "steerLeft", "ArrowUp"); // throttle's last key
+    expect(s.keyMap.steerLeft).toEqual(["ArrowUp"]);
+    expect(s.keyMap.throttle).toEqual(["KeyA", "ArrowLeft"]); // swapped in
+    for (const a of KEY_ACTIONS) expect(s.keyMap[a].length).toBeGreaterThan(0);
+  });
 
   it("an unbound action still produces inputFrom with its other keys", () => {
     const km: KeyMap = {
@@ -131,6 +152,17 @@ describe("settings migration", () => {
       const out = migrate(s).settings;
     expect(out.keyMap.throttle).toEqual(["KeyW"]);
     expect(out.keyMap.brake).toEqual(defaultKeyMap().brake); // junk -> default
+      });
+
+  it("drops reserved keys from a saved binding (they'd double as restart / quit)", () => {
+    const s = blankSave({
+        settings: {
+          keyMap: { handbrake: ["KeyQ", "ShiftLeft"], throttle: ["KeyR"] },
+        },
+      });
+    const out = migrate(s).settings;
+    expect(out.keyMap.handbrake).toEqual(["ShiftLeft"]);
+    expect(out.keyMap.throttle).toEqual(defaultKeyMap().throttle); // emptied -> default
       });
 
   it("keeps a valid, rebinded settings object", () => {

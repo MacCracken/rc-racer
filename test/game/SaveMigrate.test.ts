@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { migrate, newSave } from "../../src/game/save.ts";
 import { defaultSettings } from "../../src/game/settings.ts";
+import { maxTierFor } from "../../src/game/upgrades.ts";
+import { MAX_GHOST_POINTS } from "../../src/race/Ghost.ts";
 
 /**
  * Save-migration is exercised here because bestGhosts (v2) and `settings` (v3)
@@ -66,6 +68,63 @@ describe("Save migration — schema bump (v1 -> v3)", () => {
     expect(g.map((p) => p.t)).toEqual([50, 100]);
     expect(g[0].x).toBe(2);
     expect(g[1].x).toBe(1);
+  });
+
+  it("heals a corrupt record: a non-positive best lap is dropped with its ghost", () => {
+    // What the stale race clock once saved: a negative "record" (unbeatable)
+    // and the empty ghost recorded beside it.
+    const out = migrate({
+      bestLaps: { overture: -35441.7, hairpin: 12000, clover: null },
+      bestGhosts: {
+        overture: [],
+        hairpin: [
+          { t: 0, x: 0, y: 0, heading: 0 },
+          { t: 100, x: 1, y: 0, heading: 0 },
+        ],
+      },
+    });
+    expect(out.bestLaps.overture).toBeUndefined();
+    expect(out.bestGhosts.overture).toBeUndefined();
+    expect(out.bestLaps.clover).toBeUndefined();
+    expect(out.bestLaps.hairpin).toBe(12000);
+    expect(out.bestGhosts.hairpin?.length).toBe(2);
+  });
+
+  it("clamps upgrade tiers to whole, in-range counts and drops unknown cars", () => {
+    const out = migrate({
+      ownedCars: ["street-sedan"],
+      upgrades: {
+        "street-sedan": { engine: 99, tires: -2, brakes: 1.7, aero: "x", bogus: 3 },
+        "no-such-car": { engine: 1 },
+      },
+    });
+    const up = out.upgrades["street-sedan"];
+    expect(up.engine).toBe(maxTierFor("engine"));
+    expect(up.tires).toBe(0);
+    expect(up.brakes).toBe(1);
+    expect(up.aero).toBe(0);
+    expect(up).not.toHaveProperty("bogus");
+    expect(out.upgrades).not.toHaveProperty("no-such-car");
+  });
+
+  it("never selects a car that isn't owned (or double-lists an owned one)", () => {
+    const out = migrate({
+      ownedCars: ["street-sedan", "street-sedan"],
+      selectedCar: "brawler",
+    });
+    expect(out.ownedCars).toEqual(["street-sedan"]);
+    expect(out.selectedCar).toBe("street-sedan");
+  });
+
+  it("caps an oversized stored ghost so it can't crowd the save", () => {
+    const pts = Array.from({ length: 5000 }, (_, i) => ({
+      t: i * 8,
+      x: i,
+      y: 0,
+      heading: 0,
+    }));
+    const out = migrate({ bestLaps: { overture: 18000 }, bestGhosts: { overture: pts } });
+    expect(out.bestGhosts.overture?.length).toBe(MAX_GHOST_POINTS);
   });
 
   it("null / non-object input migrates to a fresh save (v3)", () => {

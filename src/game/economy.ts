@@ -20,7 +20,8 @@ export function computeReward(inp: RewardInput): number {
   if (inp.bestLapMs <= 0 || !isFinite(inp.bestLapMs) || inp.parLapMs <= 0) {
     return base;
   }
-  // ratio > 1 is faster than par. Power < 1 makes returns diminish fast.
+  // ratio > 1 is faster than par. The 1.6 power rewards beating par by more;
+  // REWARD_MAX caps it, and slower-than-par laps floor at REWARD_MIN.
   const ratio = inp.parLapMs / inp.bestLapMs;
   const bonus = Math.round((Math.pow(ratio, 1.6) - 1) * 180);
   const clamped = Math.min(REWARD_MAX, Math.max(REWARD_MIN, bonus));

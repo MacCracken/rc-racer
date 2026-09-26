@@ -34,4 +34,11 @@ describe("FixedTimestepLoop", () => {
     loop.update(1000); // huge delta: frame clamp + MAX_STEPS_PER_FRAME cap
     expect(calls).toBeLessThanOrEqual(8);
   });
+
+  it("keeps the interpolation alpha within [0, 1] after a capped frame", () => {
+    const loop = new FixedTimestepLoop(FIXED_DT, () => {});
+    const alpha = loop.update(1000); // leaves a multi-step backlog
+    expect(alpha).toBeGreaterThanOrEqual(0);
+    expect(alpha).toBeLessThanOrEqual(1);
+  });
 });

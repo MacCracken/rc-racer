@@ -68,20 +68,57 @@ function buildWalls(track: BuiltTrack): M.Body[] {
   return walls;
 }
 
+/** Spacing between starting-grid rows (a car length plus a gap). */
+const GRID_ROW = 42;
+
 /**
- * Create a single car body at the start line, offset laterally by `side` px, with
- * its stats baked into inertia.
+ * Pose of starting-grid slot `slot`: slot 0 (pole) sits on the start line; the
+ * rest fill a staggered two-wide grid behind it, walked back *along the
+ * centerline* so every car starts on the asphalt even when the line is on a
+ * bend. (Lateral offsets alone put the outer cars past the track edge.)
  */
-function createCarBody(track: BuiltTrack, stats: CarStats, side = 0): M.Body {
+function gridSlot(
+  track: BuiltTrack,
+  slot: number,
+): { x: number; y: number; heading: number } {
+  const { pos, heading } = track.start;
+  if (slot <= 0) return { x: pos.x, y: pos.y, heading };
+  const cl = track.centerLine;
+  const n = cl.length;
+  const side = (slot % 2 === 1 ? 1 : -1) * track.width * 0.22;
+  let back = Math.ceil(slot / 2) * GRID_ROW;
+  // Walk backwards from the start (centerline point 0), segment by segment.
+  for (let k = 0; k < n; k++) {
+    const b = cl[(n - k) % n];
+    const a = cl[(n - k - 1) % n];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (back > len && k < n - 1) {
+      back -= len;
+      continue;
+    }
+    const f = len === 0 ? 0 : Math.min(1, back / len);
+    const h = Math.atan2(b.y - a.y, b.x - a.x);
+    return {
+      x: b.x + (a.x - b.x) * f - Math.sin(h) * side,
+      y: b.y + (a.y - b.y) * f + Math.cos(h) * side,
+      heading: h,
+    };
+  }
+  return { x: pos.x, y: pos.y, heading };
+}
+
+/**
+ * Create a single car body in starting-grid slot `slot` (0 = pole, on the
+ * line), with its stats baked into inertia.
+ */
+function createCarBody(track: BuiltTrack, stats: CarStats, slot = 0): M.Body {
   // Bigger stats -> slightly heavier body for feel; keep the hitbox the same
   // size so the band model stays consistent across builds.
   const mass = 1 + stats.maxSpeed / 1000;
-  const p = track.start.pos;
-  const nx = -Math.sin(track.start.heading);
-  const ny = Math.cos(track.start.heading);
+  const p = gridSlot(track, slot);
   const car = M.Bodies.rectangle(
-    p.x + nx * side,
-    p.y + ny * side,
+    p.x,
+    p.y,
     CAR_LENGTH,
     CAR_WIDTH,
     {
@@ -93,7 +130,7 @@ function createCarBody(track: BuiltTrack, stats: CarStats, side = 0): M.Body {
       render: { visible: false },
     },
   );
-  M.Body.setAngle(car, track.start.heading);
+  M.Body.setAngle(car, p.heading);
   M.Body.setVelocity(car, { x: 0, y: 0 });
   return car;
 }
@@ -156,10 +193,9 @@ export function createArena(
       accel: playerStats.accel * (0.9 + 0.03 * i),
       grip: playerStats.grip * (0.86 + 0.02 * i),
     };
-    const side = (i + 1) * 28 * (i % 2 === 0 ? 1 : -1);
     cars.push({
       isPlayer: false,
-      body: createCarBody(track, stat, side),
+      body: createCarBody(track, stat, i + 1),
       stats: stat,
       pace: rivalPaces[i],
       label: `rival${i + 1}`,

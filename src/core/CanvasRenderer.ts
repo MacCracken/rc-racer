@@ -65,6 +65,7 @@ export class Canvas2DRenderer implements IRenderer {
       ghost,
       confettiAgeMs,
       fps,
+      hud = true,
     } = scene;
     const w = this.canvas.width / this.dpr;
     const h = this.canvas.height / this.dpr;
@@ -77,19 +78,21 @@ export class Canvas2DRenderer implements IRenderer {
     this.drawNextGate(track, camera, race);
     this.drawRivals(rivals, camera);
     this.drawCar(car, camera);
-    this.drawHUD(
-      track.def.name,
-      race,
-      track,
-      speed,
-      nowMs,
-      w,
-      h,
-      position,
-      total,
-      car,
-      fps,
-    );
+    if (hud)
+      this.drawHUD(
+        track.def.name,
+        race,
+        track,
+        speed,
+        nowMs,
+        w,
+        h,
+        position,
+        total,
+        car,
+        fps,
+        rivals,
+      );
     if (confettiAgeMs !== undefined && confettiAgeMs >= 0) {
       this.drawConfetti(this.ctx, w, h, confettiAgeMs);
     }
@@ -106,19 +109,34 @@ export class Canvas2DRenderer implements IRenderer {
   private drawTrack(track: BuiltTrack, cam: Camera): void {
     const { ctx } = this;
     const surface = track.def.surface ?? "#39404a";
+    const road = track.width * cam.zoom;
+    const curb = 10; // screen px, centred on each road edge
 
-    // Asphalt annulus = outer loop + inner loop, filled with even-odd.
+    // The road is every point within width/2 of the centerline, which is the
+    // exact band the physics keeps cars in. Stroking the centerline draws
+    // that, rounding the inside of corners tighter than the road is wide,
+    // where the offset `inner`/`outer` outlines fold into little bowties.
+    // Layered strokes (widest first) give the curbs: a red base, white dashes,
+    // then red and asphalt again to trim each curb to a band on the edge.
+    ctx.save();
+    ctx.lineJoin = "round";
     ctx.beginPath();
-    this.tracePolygon(track.outer, cam, true);
-    this.tracePolygon(track.inner, cam, true);
-    ctx.fillStyle = surface;
-    ctx.fill("evenodd");
-
-    // Curb stripe along the outer wall (thick red base + dashed white).
-    this.strokeCurb(track.outer, cam);
-
-    // Curb stripe along the inner island.
-    this.strokeCurb(track.inner, cam);
+    this.tracePolygon(track.centerLine, cam, true);
+    ctx.strokeStyle = "#b23a3a";
+    ctx.lineWidth = road + curb;
+    ctx.stroke();
+    ctx.setLineDash([18, 18]);
+    ctx.strokeStyle = "#f4f4f4";
+    ctx.lineWidth = road + curb / 2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "#b23a3a";
+    ctx.lineWidth = Math.max(0, road - curb / 2);
+    ctx.stroke();
+    ctx.strokeStyle = surface;
+    ctx.lineWidth = Math.max(0, road - curb);
+    ctx.stroke();
+    ctx.restore();
 
     // Start / finish line at gate 0.
     this.drawStartLine(track, cam);
@@ -181,24 +199,6 @@ export class Canvas2DRenderer implements IRenderer {
       }
     }
     ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  private strokeCurb(pts: { x: number; y: number }[], cam: Camera): void {
-    const { ctx } = this;
-    ctx.save();
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.lineWidth = 10;
-    ctx.strokeStyle = "#b23a3a";
-    this.tracePolygon(pts, cam, true);
-    ctx.stroke();
-    ctx.lineWidth = 5;
-    ctx.setLineDash([18, 18]);
-    ctx.lineDashOffset = 0;
-    ctx.strokeStyle = "#f4f4f4";
-    this.tracePolygon(pts, cam, true);
-    ctx.stroke();
     ctx.restore();
   }
 
@@ -303,43 +303,70 @@ export class Canvas2DRenderer implements IRenderer {
     total?: number,
     car?: Matter.Body,
     fps?: number,
+    rivals?: Matter.Body[],
   ): void {
     const { ctx } = this;
     const s = this.hudScale;
+    const pad = 12;
+    const barH = 48 * s;
+    const row1 = 8 * s;
+    const row2 = 28 * s;
+    const font = `${16 * s}px system-ui, sans-serif`;
     ctx.save();
-    ctx.font = `${16 * s}px system-ui, sans-serif`;
+    ctx.font = font;
     ctx.textBaseline = "top";
     ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillRect(0, 0, w, 42 * s);
+    ctx.fillRect(0, 0, w, barH);
     ctx.fillStyle = "#fff";
 
     const kmh = Math.round(Math.abs(speed) * 0.6);
-    const laps = `${race.lap}/${track.laps}`;
+    // The lap being driven (1-based), not laps completed: the final lap
+    // reads 3/3, not 2/3.
+    const laps = `${Math.min(race.lap + 1, track.laps)}/${track.laps}`;
     const cur = currentLapTimeMs(race, nowMs);
     const best =
       race.bestLapMs === Infinity ? "--:--.---" : formatLap(race.bestLapMs);
     const last = race.lastLapMs === 0 ? "--:--.---" : formatLap(race.lastLapMs);
 
-    ctx.fillText(`LAP ${laps}`, 12, 10);
-    ctx.fillText(`BEST ${best}`, 130, 10);
-    ctx.fillText(`LAST ${last}`, 300, 10);
-    ctx.fillText(`NOW ${formatLap(cur)}`, 460, 10);
+    // Columns sized from worst-case text, so they never overlap at any HUD
+    // size and don't shuffle as the digits change.
+    const cols: [text: string, widest: string][] = [
+      [`LAP ${laps}`, "LAP 00/00"],
+      [`BEST ${best}`, "BEST 00:00.000"],
+      [`LAST ${last}`, "LAST 00:00.000"],
+      [`NOW ${formatLap(cur)}`, "NOW 00:00.000"],
+    ];
+    let x = pad;
+    for (const [text, widest] of cols) {
+      ctx.fillText(text, x, row1);
+      x += ctx.measureText(widest).width + 24 * s;
+    }
+    ctx.fillText(trackName, pad, row2);
+
+    // Position + FPS, right-aligned in the bar (the minimap sits below it).
+    ctx.textAlign = "right";
     if (position !== undefined && total !== undefined) {
-      ctx.fillText("P " + position + "/" + total, w - 150, 10);
+      ctx.font = `bold ${18 * s}px system-ui, sans-serif`;
+      ctx.fillText("P " + position + "/" + total, w - pad, row1);
+      ctx.font = font;
     }
     if (fps !== undefined) {
-      ctx.fillText(`FPS ${Math.round(fps)}`, w - 80, 30);
+      ctx.fillText(`FPS ${Math.round(fps)}`, w - pad, row2);
     }
-    ctx.fillText(trackName, 12, 30);
+    ctx.textAlign = "left";
 
-    // speed bar, lower-right
+    // speed box, lower-right
+    const boxW = 190 * s;
+    const boxH = 42 * s;
+    const boxX = w - boxW - 10;
+    const boxY = h - boxH - 10;
     ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillRect(w - 200, h - 52, 190, 42);
+    ctx.fillRect(boxX, boxY, boxW, boxH);
     ctx.fillStyle = "#fff";
-    ctx.fillText(`SPD ${kmh} km/h`, w - 190, h - 40);
+    ctx.fillText(`SPD ${kmh} km/h`, boxX + 10 * s, boxY + 13 * s);
 
-    // minimap top-right
-    if (car) this.drawMinimap(ctx, track, car, w);
+    // minimap top-right, under the bar
+    if (car) this.drawMinimap(ctx, track, car, w, barH + pad, rivals);
 
     ctx.restore();
   }
@@ -349,12 +376,14 @@ export class Canvas2DRenderer implements IRenderer {
     track: BuiltTrack,
     car: Matter.Body,
     w: number,
+    top: number,
+    rivals?: Matter.Body[],
   ): void {
     const pad = 12;
     const mapW = Math.round(160 * this.hudScale);
     const mapH = Math.round(100 * this.hudScale);
     const mapX = w - mapW - pad;
-    const mapY = pad;
+    const mapY = top;
 
     // background
     ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -405,26 +434,43 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.closePath();
     ctx.stroke();
 
-    // player dot
-    const px = offX + car.position.x * scale;
-    const py = offY + car.position.y * scale;
-    ctx.fillStyle = "#e33b3b";
-    ctx.beginPath();
-    ctx.arc(px, py, 3, 0, Math.PI * 2);
-    ctx.fill();
+    // Car dots in the same (colour-blind aware) palette as the cars on track.
+    const pal = carPalette(this.colorMode);
+    const dot = (b: Matter.Body, color: string, r: number): void => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(offX + b.position.x * scale, offY + b.position.y * scale, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    };
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1;
+    for (const r of rivals ?? []) dot(r, pal.rival, 2.5);
+    dot(car, pal.player, 3.5);
   }
 
   private drawConfetti(ctx: CanvasRenderingContext2D, w: number, h: number, ageMs: number): void {
-    const duration = 1200;
+    const duration = 1600;
     if (ageMs > duration) return;
-    const t = ageMs / duration;
+    const t = ageMs / 1000;
+    // Fixed per-piece randoms (a cheap hash of the index), so each piece flies
+    // a steady path instead of re-rolling its position every frame.
+    const rnd = (i: number, k: number): number => {
+      const v = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
+      return v - Math.floor(v);
+    };
     ctx.save();
-    ctx.globalAlpha = 1 - t;
+    ctx.globalAlpha = 1 - ageMs / duration;
     const count = 80;
+    const gravity = 1.2 * h; // px/s²
     for (let i = 0; i < count; i++) {
-      const x = w * 0.5 + (Math.random() - 0.5) * w * 0.8 * t;
-      const y = h * 0.3 + Math.random() * h * 0.5 * t;
-      const size = 4 + Math.random() * 4;
+      // A fountain: pieces fly up into the open space above the results panel
+      // (which covers the screen's middle), then fall back behind it.
+      const vx = (rnd(i, 1) - 0.5) * w * 0.9;
+      const vy = -(0.35 + 0.35 * rnd(i, 2)) * h;
+      const x = w * 0.5 + vx * t;
+      const y = h * 0.32 + vy * t + 0.5 * gravity * t * t;
+      const size = 4 + rnd(i, 3) * 4;
       ctx.fillStyle = `hsl(${(i * 137.5) % 360}, 90%, 65%)`;
       ctx.fillRect(x, y, size, size * 0.6);
     }

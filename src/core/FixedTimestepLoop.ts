@@ -45,7 +45,9 @@ export class FixedTimestepLoop {
       this.accumulator = Math.min(this.accumulator, MAX_FRAME_TIME);
     }
 
-    return this.accumulator / this.fixedDt;
+    // After a capped frame the backlog can exceed one step; an interpolation
+    // alpha is only meaningful in [0, 1].
+    return Math.min(1, this.accumulator / this.fixedDt);
   }
 
   get stepCount(): number {

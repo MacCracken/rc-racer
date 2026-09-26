@@ -27,7 +27,12 @@ export class WebAudio implements IAudio {
   muted = false;
 
   private ensure(): AudioContext | null {
-    if (this.ctx !== null) return this.ctx;
+    if (this.ctx !== null) {
+      // A context made (or re-suspended, e.g. by Safari) outside a user
+      // gesture stays silent until resumed.
+      if (this.ctx.state === "suspended") void this.ctx.resume().catch(() => {});
+      return this.ctx;
+    }
     if (typeof window === "undefined") return null;
     const AC =
       (

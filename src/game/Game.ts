@@ -15,12 +15,12 @@ import {
   type Arena,
   type ArenaCar,
 } from "../physics/MatterCar.ts";
-import { RaceState, currentLapTimeMs } from "../race/RaceState.ts";
+import { RaceState } from "../race/RaceState.ts";
 import { makeDriver } from "../race/AiDriver.ts";
 import { tracks as DEFAULT_TRACKS } from "../track/tracks.ts";
 import type { TrackDef } from "../track/Track.ts";
 import { buildTrack } from "../track/Track.ts";
-import { carClasses as DEFAULT_CARS, type CarClass } from "./cars.ts";
+import { carById, carClasses as DEFAULT_CARS, type CarClass } from "./cars.ts";
 import { Progression } from "./progression.ts";
 import {
   UPGRADE_TREE,
@@ -29,7 +29,7 @@ import {
   type SlotId,
   type OwnedUpgrades,
 } from "./upgrades.ts";
-import { LocalSaveStore, MemorySaveStore } from "./save.ts";
+import { browserStorage, LocalSaveStore, MemorySaveStore } from "./save.ts";
 import type { ISaveStore } from "./save.ts";
 import type { IRenderer, RenderScene } from "../core/types.ts";
 import { createAudio, type IAudio } from "../core/Audio.ts";
@@ -57,9 +57,10 @@ import {
   type ResultsView,
 } from "../ui/ui.ts";
 import type { Vec2 } from "../core/vec.ts";
-import { ACTION_LABELS } from "../core/theme.ts";
+import { ACTION_LABELS, keyLabel } from "../core/theme.ts";
 import {
   defaultSettings,
+  isReservedCode,
   nextHudSize,
   rebindSetting,
   toggleColorMode,
@@ -120,14 +121,22 @@ export class Game {
   public screen: Screen = "menu";
 
   private onClickBound: (e: Event) => void;
+  private onKeyDownBound: (e: KeyboardEvent) => void;
+  private onResizeBound: () => void;
   private skid: SkidState;
   private audio: IAudio;
   private prevLap = 0;
   private ghost: Ghost = [];
-  private confettiStartMs = 0;
+  /**
+   * Frame time (rAF ms) the finish confetti started, or null for none. Wall
+   * clock, not the race clock: the sim (and its clock) stops at the finish.
+   */
+  private confettiStartFrameMs: number | null = null;
   private settings: Settings;
      /** The action awaiting a key capture, or null when not rebinding. */
   private rebinding: KeyAction | null = null;
+  /** Why the last captured key was refused (e.g. a reserved key), if any. */
+  private rebindNotice: string | null = null;
   private onRebindKeyBound: (e: KeyboardEvent) => void;
 
   constructor(
@@ -139,7 +148,9 @@ export class Game {
     this.rivals = deps.rivals ?? 3;
     this.carClasses = deps.carClasses ?? DEFAULT_CARS;
     this.trackDefs = deps.tracks ?? DEFAULT_TRACKS;
-    this.store = deps.store ?? (typeof localStorage !== "undefined" ? new LocalSaveStore() : new MemorySaveStore());
+    this.store =
+      deps.store ??
+      (browserStorage() !== null ? new LocalSaveStore() : new MemorySaveStore());
     const w = typeof window !== "undefined" ? window.innerWidth : 800;
     const h = typeof window !== "undefined" ? window.innerHeight : 600;
     this.camera = new Camera({ x: 0, y: 0 }, w, h, 0.55);
@@ -147,6 +158,8 @@ export class Game {
     this.loop = new FixedTimestepLoop(1 / 120, (dt) => this.onStep(dt));
 
     this.onClickBound = (e: Event) => this.onClick(e);
+    this.onKeyDownBound = (e: KeyboardEvent) => this.onKeyDown(e);
+    this.onResizeBound = () => this.onResize();
     this.onRebindKeyBound = (e: KeyboardEvent) => this.onRebindKey(e);
 
     this.skid = createSkid();
@@ -175,13 +188,8 @@ export class Game {
   start(): void {
     this.input.attach(document.body);
      document.addEventListener("keydown", this.onRebindKeyBound, true);
-    window.addEventListener("resize", () => this.onResize());
-    window.addEventListener("keydown", (e) => {
-      if (e.code === "KeyR" && this.screen === "race") this.startRace();
-      const quitting =
-        e.code === "Escape" || e.code === "Backspace" || e.code === "KeyQ";
-      if (quitting && this.screen !== "menu") this.backToMenu();
-    });
+    window.addEventListener("resize", this.onResizeBound);
+    window.addEventListener("keydown", this.onKeyDownBound);
     this.showMenu();
     this.lastFrameMs = performance.now();
     this.frameHandle = requestAnimationFrame((t) => this.frame(t));
@@ -190,9 +198,28 @@ export class Game {
   stop(): void {
     this.input.detach();
      document.removeEventListener("keydown", this.onRebindKeyBound, true);
+    window.removeEventListener("resize", this.onResizeBound);
+    window.removeEventListener("keydown", this.onKeyDownBound);
     this.uiRoot.removeEventListener("click", this.onClickBound);
     if (this.frameHandle !== null) cancelAnimationFrame(this.frameHandle);
     this.frameHandle = null;
+  }
+
+  /** Global shortcuts: R restarts a race; Esc / Q / Backspace go to the menu. */
+  private onKeyDown(e: KeyboardEvent): void {
+    // Leave browser/OS chords (⌘R reload, Ctrl+Q…) to the browser.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.code === "KeyR" && this.screen === "race") {
+      // Holding R auto-repeats keydown; restart once per press.
+      if (!e.repeat) this.startRace();
+      return;
+    }
+    const quitting =
+      e.code === "Escape" || e.code === "Backspace" || e.code === "KeyQ";
+    if (quitting && this.screen !== "menu") {
+      this.audio.play("click");
+      this.backToMenu();
+    }
   }
 
   private frame(nowMs: number): void {
@@ -264,8 +291,19 @@ export class Game {
   // Quit to the menu from a race or results screen (Esc/Q/Backspace or the
   // on-screen Menu control). Resets to the single-car preview arena.
   private backToMenu(): void {
-    this.audio.play("click");
+    this.resetPreview();
+    this.showMenu();
+  }
+
+  /**
+   * Park a single car on the selected track: the live backdrop behind the
+   * menus. Clears every trace of the last race (clock, rivals, skids,
+   * confetti) so none of it leaks into the menu or the next race.
+   */
+  private resetPreview(): void {
     this.finished = false;
+    this.clockMs = 0;
+    this.confettiStartFrameMs = null;
     this.arena = createArena(
       buildTrack(this.currentTrack()),
       this.currentStats(),
@@ -273,9 +311,9 @@ export class Game {
     );
     this.racers = [];
     this.playerRace = new RaceState(this.arena.track, () => this.clockMs);
+    this.skid = createSkid();
+    this.ghost = this.prog.ghostFor(this.currentTrack().id);
     this.lastResults = null;
-    this.clockMs = 0;
-    this.showMenu();
   }
 
   private startRace(): void {
@@ -287,6 +325,11 @@ export class Game {
       document.activeElement instanceof HTMLElement
     )
       document.activeElement.blur();
+    // Reset the race clock *before* building any RaceState: each stamps its
+    // lap start from this clock, so a stale one (Race again, R restart) made
+    // the first lap time negative and saved it as an unbeatable record.
+    this.clockMs = 0;
+    this.confettiStartFrameMs = null;
     const track = buildTrack(this.currentTrack());
     const stats = this.currentStats();
     const paces = Array.from({ length: this.rivals }, (_, i) => {
@@ -308,7 +351,6 @@ export class Game {
     }
     this.finished = false;
     this.lastResults = null;
-    this.clockMs = 0;
     this.skid = createSkid();
     this.prevLap = 0;
     this.screen = "race";
@@ -383,7 +425,7 @@ export class Game {
   private finalizeRace(): void {
     this.finished = true;
     this.audio.play("finish");
-    this.confettiStartMs = this.clockMs;
+    this.confettiStartFrameMs = this.lastFrameMs;
     const outcome = this.prog.recordRace({
       trackId: this.currentTrack().id,
       carId: this.prog.selectedCarId,
@@ -397,19 +439,34 @@ export class Game {
       total: this.arena.cars.length,
       bestLapMs: this.playerRace.bestLapMs,
       outcome,
+      unlockedCarName:
+        outcome.unlockedCar === null
+          ? undefined
+          : (carById(outcome.unlockedCar)?.name ?? outcome.unlockedCar),
     };
     this.save();
     this.showResults();
   }
 
-  /** Live Pn for the HUD: count rivals further around the lap than us. */
+  /**
+   * Live Pn for the HUD: count rivals ahead on the road. Finished cars rank by
+   * finish time; everyone else by distance raced (lap count alone left the
+   * whole first lap a tie, which always read P1).
+   */
   private playerPosition(): number {
-    const progressOf = (race: RaceState): number =>
-      race.lap * 10_000_000 + currentLapTimeMs(race, this.clockMs);
-    const playerP = progressOf(this.playerRace);
+    const me = this.playerRace;
+    const mine = me.progress(this.arena.cars[0]!.body.position);
     let ahead = 0;
     for (const r of this.racers) {
-      if (progressOf(r.race) > playerP) ahead += 1;
+      const theirs = r.race;
+      if (me.finished) {
+        if (theirs.finished && theirs.finishMs < me.finishMs) ahead += 1;
+      } else if (
+        theirs.finished ||
+        theirs.progress(r.car.body.position) > mine
+      ) {
+        ahead += 1;
+      }
     }
     return ahead + 1;
   }
@@ -430,8 +487,14 @@ export class Game {
       total: this.arena.cars.length,
       skidMarks: this.skid.marks,
       ghost: this.ghost,
-      confettiAgeMs: this.confettiStartMs ? this.clockMs - this.confettiStartMs : undefined,
+      confettiAgeMs:
+        this.confettiStartFrameMs === null
+          ? undefined
+          : this.lastFrameMs - this.confettiStartFrameMs,
       fps: this.fps,
+      // The race HUD belongs to a race (and its results); on the menus it
+      // just peeks out around the panels.
+      hud: this.screen === "race" || this.screen === "results",
     };
     this.renderer.render(scene);
   }
@@ -469,23 +532,42 @@ export class Game {
     else if (action === "reset-settings")
       this.commitSettings({ ...this.settings, keyMap: defaultSettings().keyMap });
 
+    // Selections and purchases are saved as they happen, not at the next
+    // race's end — closing the tab must not undo a purchase.
+    let changed = false;
     const selCar = el.getAttribute("data-selectcar");
     if (selCar !== null) {
-      this.prog.selectCar(selCar);
-      if (!this.prog.isCarOwned(selCar)) this.prog.unlockCar(selCar);
+      // An owned car is just selected; an unowned one is bought (which also
+      // selects it) only if affordable — never raced for free.
+      changed = this.prog.isCarOwned(selCar)
+        ? this.prog.selectCar(selCar)
+        : this.prog.unlockCar(selCar);
     }
 
     const selTrack = el.getAttribute("data-selecttrack");
     if (selTrack !== null) {
-      this.prog.selectTrack(selTrack);
+      const i = this.trackDefs.findIndex((t) => t.id === selTrack);
+      if (i >= 0 && this.prog.isTrackUnlocked(i)) {
+        this.prog.selectTrack(selTrack);
+        changed = true;
+      }
     }
 
     const sw = el.getAttribute("data-switchcar");
-    if (sw !== null) this.prog.selectCar(sw);
+    if (sw !== null) changed = this.prog.selectCar(sw) || changed;
 
     const buySlot = el.getAttribute("data-buy");
     if (buySlot !== null)
-      this.prog.buyUpgrade(this.prog.selectedCarId, buySlot as SlotId);
+      changed =
+        this.prog.buyUpgrade(this.prog.selectedCarId, buySlot as SlotId) ||
+        changed;
+
+    if (changed) {
+      this.save();
+      // Show the chosen car/track (and its stats) behind the menus.
+      this.resetPreview();
+      this.syncPreviewCamera();
+    }
 
     // Re-render whatever screen we're on so a just-made purchase shows up.
      // A "rebind" button arms a capture; onRebindKey binds the next key. Any
@@ -493,10 +575,12 @@ export class Game {
     const bind = el.getAttribute("data-bind");
     if (bind !== null) {
       this.rebinding = bind as KeyAction;
+      this.rebindNotice = null;
       this.showSettings();
         return;
          }
-    if (this.rebinding !== null) this.rebinding = null;
+    this.rebinding = null;
+    this.rebindNotice = null;
 
     if (this.screen === "menu") this.showMenu();
     else if (this.screen === "garage") this.showGarage();
@@ -572,6 +656,7 @@ export class Game {
          })),
       rebinding: this.rebinding !== null,
       rebindingAction: this.rebinding,
+      notice: this.rebindNotice ?? undefined,
          };
        }
 
@@ -595,14 +680,23 @@ export class Game {
     e.stopPropagation();
     if (e.code === "Escape") {
       this.rebinding = null;
+      this.rebindNotice = null;
       this.showSettings();
       return;
           }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // R / Q / Backspace already restart or quit; keep capturing and say why.
+    if (isReservedCode(e.code)) {
+      this.rebindNotice = `${keyLabel(e.code)} is reserved — press another key`;
+      this.showSettings();
+      return;
+    }
     const action = this.rebinding;
     this.rebinding = null;
+    this.rebindNotice = null;
     if (action === null) return;
     this.commitSettings(rebindSetting(this.settings, action, e.code));
+    this.showSettings();
        }
 
   private save(): void {

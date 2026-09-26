@@ -22,6 +22,22 @@ export interface Settings {
   hudSize: HudSize;
 }
 
+/**
+ * Keys the game itself answers to (R restarts, Esc / Q / Backspace go back to
+ * the menu). Binding a driving action to one would fire both, e.g. a handbrake
+ * on Q that also quits the race, so these are never rebindable.
+ */
+export const RESERVED_CODES: readonly string[] = [
+  "KeyR",
+  "KeyQ",
+  "Escape",
+  "Backspace",
+];
+
+export function isReservedCode(code: string): boolean {
+  return RESERVED_CODES.includes(code);
+}
+
 export function defaultSettings(): Settings {
   return {
     keyMap: defaultKeyMap(),
@@ -55,7 +71,8 @@ function migrateKeyMap(raw: unknown): KeyMap {
     const v = r[a];
     if (Array.isArray(v)) {
       const codes = v.filter(
-         (c): c is string => typeof c === "string" && c.length > 0,
+         (c): c is string =>
+           typeof c === "string" && c.length > 0 && !isReservedCode(c),
       );
         // A binding that lost every code reverts to its default for that action.
       out[a] = codes.length > 0 ? codes : base[a];
@@ -67,13 +84,17 @@ function migrateKeyMap(raw: unknown): KeyMap {
 /**
  * Rebind one action to a single code, moving it off any action that already
  * claims that code (one code -> one action, so an action cannot silently steal
- * another's key). Returns a new settings object with the change applied.
+ * another's key). If that leaves the other action with no key at all, it takes
+ * over this action's old keys (a swap), so no action is ever left undrivable.
+ * A reserved code is refused (the settings come back unchanged). Returns a new
+ * settings object with the change applied.
  */
 export function rebindSetting(
   s: Settings,
   action: KeyAction,
   code: string,
 ): Settings {
+  if (isReservedCode(code)) return s;
    // Strip `code` from every action first so it isn't left bound elsewhere.
   const kmc: KeyMap = {
     throttle: s.keyMap.throttle.filter((c) => c !== code),
@@ -82,6 +103,11 @@ export function rebindSetting(
     steerRight: s.keyMap.steerRight.filter((c) => c !== code),
     handbrake: s.keyMap.handbrake.filter((c) => c !== code),
      };
+  const freed = s.keyMap[action].filter((c) => c !== code);
+  const orphan = KEY_ACTIONS.find(
+    (a) => a !== action && s.keyMap[a].length > 0 && kmc[a].length === 0,
+  );
+  if (orphan !== undefined && freed.length > 0) kmc[orphan] = freed;
   kmc[action] = [code];
   return { ...s, keyMap: kmc };
 }

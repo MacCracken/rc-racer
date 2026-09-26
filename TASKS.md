@@ -10,7 +10,8 @@ Generated from `roadmap.md` Phase 3 → Phase 4.
 - [x] Finish-line confetti burst
 - [x] Minimap overlay with car/track position
 - [x] Ghost-line visual render via `IRenderer.drawGhost` — confirm visibility in dev build
-- [x] Audio playback: WebAudio UI clicks/finish/lap chimes working; engine pitch ~ RPM added via continuous sawtooth hum
+- [x] Audio playback: WebAudio UI clicks/finish/lap chimes working
+- [ ] Engine pitch ~ RPM hum — NOT implemented: only the optional `IAudio.setEngineSpeed` seam exists (nothing implements or calls it)
 - [x] Onboarding panel — 30s how-to: controls + earn → upgrade → go faster
 - [~] Track visualizer / JSON import tool for authoring tracks without code — stub in place, full authoring UI deferred to Phase 5
 

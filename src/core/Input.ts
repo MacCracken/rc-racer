@@ -102,6 +102,11 @@ export interface IInput {
 
 const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
 
+/** Is `code` bound to any driving action? */
+export function isBound(km: KeyMap, code: string): boolean {
+  return KEY_ACTIONS.some((a) => km[a].includes(code));
+}
+
 /**
  * Keyboard input. Maps WASD + arrow keys to the normalized axis state via a
  * `KeyMap` (rebindable). Throttle/brake on the Y axis, steer on X, handbrake a
@@ -111,31 +116,54 @@ export class KeyboardInput implements IInput {
   private readonly held = new Set<string>();
    /** The element listeners attach to, so detach() matches attach(). */
   private target: HTMLElement | null = null;
+  /** Its window, watched for blur (keyups are lost while unfocused). */
+  private win: Window | null = null;
   private readonly onDown: (e: KeyboardEvent) => void;
   private readonly onUp: (e: KeyboardEvent) => void;
+  private readonly onBlur: () => void;
   private km: KeyMap = defaultKeyMap();
 
   constructor() {
-    this.onDown = (e: KeyboardEvent) => this.set(e, true);
-    this.onUp = (e: KeyboardEvent) => this.set(e, false);
+    this.onDown = (e: KeyboardEvent) => this.down(e);
+    this.onUp = (e: KeyboardEvent) => this.up(e);
+    this.onBlur = () => this.held.clear();
    }
 
-  private set(e: KeyboardEvent, down: boolean): void {
-    if (down) e.preventDefault();
-     (this.held as Set<string>)[down ? "add" : "delete"](e.code);
+  private down(e: KeyboardEvent): void {
+    // A modifier chord is a browser/OS shortcut (⌘R, Ctrl+Tab…), not driving;
+    // macOS also never sends the keyup for a key pressed while ⌘ is held.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // Swallow only driving keys (so arrows/Space don't scroll); Tab, Enter and
+    // the rest keep their normal browser behaviour.
+    if (isBound(this.km, e.code)) e.preventDefault();
+    this.held.add(e.code);
+    }
+
+  private up(e: KeyboardEvent): void {
+    this.held.delete(e.code);
+    // Keyups swallowed while ⌘ was down can't be recovered: start clean.
+    if (e.key === "Meta") this.held.clear();
     }
 
   attach(target: HTMLElement): void {
+    this.detach();
     this.target = target;
     target.addEventListener("keydown", this.onDown);
     target.addEventListener("keyup", this.onUp);
+    // Alt-tab or a click into devtools drops the keyup: forget held keys on
+    // blur rather than leave the throttle stuck on.
+    this.win = target.ownerDocument?.defaultView ?? null;
+    this.win?.addEventListener("blur", this.onBlur);
     target.tabIndex = 0;
     }
 
   detach(): void {
     this.target?.removeEventListener("keydown", this.onDown);
     this.target?.removeEventListener("keyup", this.onUp);
+    this.win?.removeEventListener("blur", this.onBlur);
     this.target = null;
+    this.win = null;
+    this.held.clear();
     }
 
    /** Swap the binding table live (a rebind); the next sample uses it. */
