@@ -11,12 +11,7 @@ import { formatLap } from "../race/RaceState.ts";
 import { defaultKeyMap, type KeyAction, type KeyMap } from "../core/Input.ts";
 
 export type Screen =
-     | "menu"
-     | "garage"
-     | "race"
-     | "results"
-     | "onboarding"
-     | "settings";
+  "menu" | "garage" | "race" | "results" | "onboarding" | "settings";
 
 export interface CarRow {
   id: string;
@@ -36,7 +31,7 @@ export interface TrackRow {
   cleared: boolean;
   unlocked: boolean;
   selected: boolean;
-    /** Flavour line + rough difficulty for the menu (both optional). */
+  /** Flavour line + rough difficulty for the menu (both optional). */
   vibe?: string;
   difficulty?: number;
   /** Who you'll race there, e.g. "vs 1/10 Buggy +1". */
@@ -89,7 +84,7 @@ export interface SettingsView {
   hudSize: HudSize;
   muted: boolean;
   bindings: BindRow[];
-    /** True while a key capture is pending, and which action is being set. */
+  /** True while a key capture is pending, and which action is being set. */
   rebinding: boolean;
   rebindingAction: string | null;
   /** Why the last key press was refused (e.g. a reserved key), if any. */
@@ -143,44 +138,47 @@ const esc = (s: string): string =>
         return "&quot;";
       default:
         return c;
-      }
-    });
+    }
+  });
 
 // --- MENU ------------------------------------------------------------------
 
 export function menuHtml(m: UiModel): string {
   const cars = m.cars
-      .map((c) => {
-        const cls = ["car-row", c.selected && "selected", !c.owned && "not-owned"]
-           .filter(Boolean)
-           .join(" ");
-        const cost = c.owned ? "" : `<span class="cost">${c.cost} cr</span>`;
-        return `
+    .map((c) => {
+      const cls = ["car-row", c.selected && "selected", !c.owned && "not-owned"]
+        .filter(Boolean)
+        .join(" ");
+      const cost = c.owned ? "" : `<span class="cost">${c.cost} cr</span>`;
+      return `
           <button class="${cls}" data-selectcar="${c.id}">
            <span class="car-name">${esc(c.name)}</span>
            <span class="car-class">${esc(c.classLabel)}</span>
            <span class="car-blurb">${esc(c.blurb)}</span>
            ${cost}
           </button>`;
-        })
-      .join("");
+    })
+    .join("");
 
   const tracks = m.tracks
-      .map((t) => {
-        const locked = !t.unlocked;
-        const cls = ["track-row", t.selected && "selected", locked && "locked"]
-           .filter(Boolean)
-           .join(" ");
-        const clear = t.cleared ? " ✓" : "";
-        const about = [t.vibe, t.rivals].filter(Boolean).map((s) => esc(s!)).join(" · ");
-        return `
+    .map((t) => {
+      const locked = !t.unlocked;
+      const cls = ["track-row", t.selected && "selected", locked && "locked"]
+        .filter(Boolean)
+        .join(" ");
+      const clear = t.cleared ? " ✓" : "";
+      const about = [t.vibe, t.rivals]
+        .filter(Boolean)
+        .map((s) => esc(s!))
+        .join(" · ");
+      return `
           <button class="${cls}" data-selecttrack="${t.id}"${locked ? " disabled" : ""}>
            <span class="track-name">${esc(t.name)}</span>
            <span class="track-meta">${t.laps} laps · par ${esc(t.parLabel)}${t.difficulty !== undefined ? " · " + "●".repeat(t.difficulty) : ""}${clear}</span>
            ${about ? `<span class="track-about">${about}</span>` : ""}
           </button>`;
-        })
-      .join("");
+    })
+    .join("");
 
   return `
     <div class="screen screen-menu">
@@ -211,31 +209,31 @@ export function menuHtml(m: UiModel): string {
 
 export function garageHtml(m: UiModel): string {
   const bars = m.statBars
-      .map((b) => {
-        const pct = Math.round(Math.max(0, Math.min(1, b.norm)) * 100);
-        return `
+    .map((b) => {
+      const pct = Math.round(Math.max(0, Math.min(1, b.norm)) * 100);
+      return `
       <div class="stat">
        <span class="stat-label">${esc(b.label)}</span>
        <span class="bar"><span class="bar-fill" style="width:${pct}%"></span></span>
        <span class="stat-val">${esc(b.text)}</span>
       </div>`;
-        })
-      .join("");
+    })
+    .join("");
 
   const slots = m.upgrades
-      .map((u) => {
-        const cls = [
-         "slot",
+    .map((u) => {
+      const cls = [
+        "slot",
         u.maxed && "maxed",
-         !u.maxed && !u.canAfford && "cant-afford",
-         ]
-            .filter(Boolean)
-            .join(" ");
-        const next =
-          u.maxed || u.nextName === undefined
-            ? ""
-            : `<span class="slot-next">Next: ${esc(u.nextName)}${u.nextDesc ? " — " + esc(u.nextDesc) : ""}</span>`;
-        return `
+        !u.maxed && !u.canAfford && "cant-afford",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const next =
+        u.maxed || u.nextName === undefined
+          ? ""
+          : `<span class="slot-next">Next: ${esc(u.nextName)}${u.nextDesc ? " — " + esc(u.nextDesc) : ""}</span>`;
+      return `
       <button class="${cls}" data-buy="${u.slot}"${u.maxed ? " disabled" : ""}>
         <span class="slot-info">
           <span class="slot-name">${esc(u.name)} <em>L${u.level}/${u.maxLevel}</em></span>
@@ -243,21 +241,21 @@ export function garageHtml(m: UiModel): string {
         </span>
         <span class="slot-cost">${u.maxed ? "MAX" : u.nextCost + " cr"}</span>
       </button>`;
-        })
-      .join("");
+    })
+    .join("");
 
   const car = m.cars.find((c) => c.selected);
   const switchCars = m.cars
-      .map((c) => {
-        const cls = ["mini-car", c.selected && "selected", !c.owned && "locked"]
-           .filter(Boolean)
-           .join(" ");
-        return `
+    .map((c) => {
+      const cls = ["mini-car", c.selected && "selected", !c.owned && "locked"]
+        .filter(Boolean)
+        .join(" ");
+      return `
         <button class="${cls}" data-switchcar="${c.id}"${c.owned ? "" : " disabled"}>
           ${esc(c.name)}${c.owned ? "" : `<i>${c.cost} cr</i>`}
         </button>`;
-        })
-      .join("");
+    })
+    .join("");
 
   return `
     <div class="screen screen-garage">
@@ -290,12 +288,12 @@ export function resultsHtml(view: ResultsView): string {
   const p = `P${position} / ${total}`;
   const timeStr = formatLap(bestLapMs);
   const record = outcome.newRecord
-      ? `<div class="new-record">★ NEW RECORD · ${formatLap(outcome.newBest)}</div>`
-     : "";
+    ? `<div class="new-record">★ NEW RECORD · ${formatLap(outcome.newBest)}</div>`
+    : "";
   // `unlockedCar` is a car you can now *afford*; buying it is still your call.
   const unlocked = outcome.unlockedCar
-      ? `<div class="unlocks">★ New car affordable: ${esc(view.unlockedCarName ?? outcome.unlockedCar)} — unlock it from the menu</div>`
-      : "";
+    ? `<div class="unlocks">★ New car affordable: ${esc(view.unlockedCarName ?? outcome.unlockedCar)} — unlock it from the menu</div>`
+    : "";
   return `
     <div class="screen screen-results">
       <div class="panel results-panel">
@@ -358,26 +356,26 @@ export function onboardingHtml(km: KeyMap): string {
 /** Interactive settings screen: display prefs + live key rebinding. */
 export function settingsHtml(v: SettingsView): string {
   const rows = v.bindings
-      .map((b) => {
-        const capturing = v.rebinding && v.rebindingAction === b.action;
-        const value = capturing
-           ? "Press a key…"
-           : b.keys.length > 0
-              ? b.keys.map(keyLabel).join(" / ")
-              : "—";
-        return `
+    .map((b) => {
+      const capturing = v.rebinding && v.rebindingAction === b.action;
+      const value = capturing
+        ? "Press a key…"
+        : b.keys.length > 0
+          ? b.keys.map(keyLabel).join(" / ")
+          : "—";
+      return `
             <div class="setting-row key-row">
               <span>${esc(b.label)}</span>
               <button class="key-btn${capturing ? " capturing" : ""}" data-bind="${esc(
-         b.action,
-        )}">${esc(value)}</button>
+                b.action,
+              )}">${esc(value)}</button>
             </div>`;
-        })
-      .join("");
+    })
+    .join("");
   const cbOn = v.colorMode === "cb";
   const captureHint = v.rebinding
-      ? `<div class="rebind-hint">${esc(v.notice ?? "Press any key to assign · Esc cancels")}</div>`
-      : "";
+    ? `<div class="rebind-hint">${esc(v.notice ?? "Press any key to assign · Esc cancels")}</div>`
+    : "";
   return `
        <div class="screen screen-settings">
          <div class="settings-panel">
@@ -392,8 +390,8 @@ export function settingsHtml(v: SettingsView): string {
                <div class="setting-row">
                  <span>HUD size</span>
                  <button class="ghost" data-action="cycle-hud">${esc(
-                      HUD_SIZE_LABEL[v.hudSize],
-        )}</button>
+                   HUD_SIZE_LABEL[v.hudSize],
+                 )}</button>
               </div>
                <div class="setting-row">
                  <span>Sound</span>

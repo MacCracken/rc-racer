@@ -137,7 +137,10 @@ function distToCenterLine(cl: Vec2[], p: Vec2): number {
     const aby = b.y - a.y;
     const t = Math.max(
       0,
-      Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / (abx * abx + aby * aby)),
+      Math.min(
+        1,
+        ((p.x - a.x) * abx + (p.y - a.y) * aby) / (abx * abx + aby * aby),
+      ),
     );
     best = Math.min(best, Math.hypot(p.x - a.x - abx * t, p.y - a.y - aby * t));
   }
@@ -154,10 +157,14 @@ describe("starting grid", () => {
       const track = buildTrack(def);
       const arena = createArena(track, defaultCarStats, field(5));
       // The collision band's edge for a car's centre (see stepCar).
-      const limit = track.width / 2 - (Math.max(CAR_LENGTH, CAR_WIDTH) / 2) * 0.7;
+      const limit =
+        track.width / 2 - (Math.max(CAR_LENGTH, CAR_WIDTH) / 2) * 0.7;
       const pos = arena.cars.map((c) => c.body.position);
       for (const p of pos)
-        expect(distToCenterLine(track.centerLine, p), def.name).toBeLessThanOrEqual(limit);
+        expect(
+          distToCenterLine(track.centerLine, p),
+          def.name,
+        ).toBeLessThanOrEqual(limit);
       for (let i = 0; i < pos.length; i++)
         for (let j = i + 1; j < pos.length; j++)
           expect(

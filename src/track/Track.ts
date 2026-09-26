@@ -194,4 +194,3 @@ export function gridSlot(
   }
   return { x: pos.x, y: pos.y, heading };
 }
-

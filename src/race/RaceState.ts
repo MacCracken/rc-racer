@@ -142,7 +142,11 @@ export class RaceState {
     }
   }
 
-  private checkGateCross(prev: Vec2, cur: Vec2, gate: { a: Vec2; b: Vec2; index: number }): boolean {
+  private checkGateCross(
+    prev: Vec2,
+    cur: Vec2,
+    gate: { a: Vec2; b: Vec2; index: number },
+  ): boolean {
     // Fast path: exact segment intersection
     if (segmentsIntersect(prev, cur, gate.a, gate.b)) return true;
 
@@ -157,7 +161,10 @@ export class RaceState {
       return pointToSegmentDist(cur, gate.a, gate.b) <= GATE_TOLERANCE;
     }
 
-    const steps = Math.max(1, Math.min(GATE_SUBSTEPS, Math.ceil(len / GATE_TOLERANCE)));
+    const steps = Math.max(
+      1,
+      Math.min(GATE_SUBSTEPS, Math.ceil(len / GATE_TOLERANCE)),
+    );
     for (let i = 0; i < steps; i++) {
       const t0 = i / steps;
       const t1 = (i + 1) / steps;

@@ -156,7 +156,7 @@ export class Game {
    */
   private confettiStartFrameMs: number | null = null;
   private settings: Settings;
-     /** The action awaiting a key capture, or null when not rebinding. */
+  /** The action awaiting a key capture, or null when not rebinding. */
   private rebinding: KeyAction | null = null;
   /** Why the last captured key was refused (e.g. a reserved key), if any. */
   private rebindNotice: string | null = null;
@@ -173,7 +173,9 @@ export class Game {
     this.trackDefs = deps.tracks ?? DEFAULT_TRACKS;
     this.store =
       deps.store ??
-      (browserStorage() !== null ? new LocalSaveStore() : new MemorySaveStore());
+      (browserStorage() !== null
+        ? new LocalSaveStore()
+        : new MemorySaveStore());
     const w = typeof window !== "undefined" ? window.innerWidth : 800;
     const h = typeof window !== "undefined" ? window.innerHeight : 600;
     this.camera = new Camera({ x: 0, y: 0 }, w, h, 0.55);
@@ -188,7 +190,7 @@ export class Game {
     this.skid = createSkid();
     this.audio = deps.audio ?? createAudio();
 
-        // Load persisted UI prefs, or start from defaults, and seed the sim seams.
+    // Load persisted UI prefs, or start from defaults, and seed the sim seams.
     this.settings = this.prog.settings ?? defaultSettings();
     this.prog.setSettings(this.settings);
     this.input.setKeyMap(this.settings.keyMap);
@@ -211,7 +213,7 @@ export class Game {
   /** Wire input + resize and start the render loop on the menu screen. */
   start(): void {
     this.input.attach(document.body);
-     document.addEventListener("keydown", this.onRebindKeyBound, true);
+    document.addEventListener("keydown", this.onRebindKeyBound, true);
     window.addEventListener("resize", this.onResizeBound);
     window.addEventListener("keydown", this.onKeyDownBound);
     this.showMenu();
@@ -221,7 +223,7 @@ export class Game {
 
   stop(): void {
     this.input.detach();
-     document.removeEventListener("keydown", this.onRebindKeyBound, true);
+    document.removeEventListener("keydown", this.onRebindKeyBound, true);
     window.removeEventListener("resize", this.onResizeBound);
     window.removeEventListener("keydown", this.onKeyDownBound);
     this.uiRoot.removeEventListener("click", this.onClickBound);
@@ -392,7 +394,10 @@ export class Game {
     this.lastInput = neutralInput();
     this.prevLap = 0;
     this.screen = "race";
-    this.uiRoot.innerHTML = raceOverlay(this.settings.keyMap, this.settings.muted);
+    this.uiRoot.innerHTML = raceOverlay(
+      this.settings.keyMap,
+      this.settings.muted,
+    );
     const p = this.arena.cars[0]!;
     this.camera.view = { x: p.body.position.x, y: p.body.position.y };
     this.camera.zoom = CAMERA_ZOOM_SLOW; // parked on the grid: close in
@@ -407,10 +412,10 @@ export class Game {
 
     // Player.
     const p = this.arena.cars[0]!;
-     // Capture the pre-step pose so the gate test sees this tick's
-     // (prev -> cur) segment. Feeding the *previous* stored pose (the old
-     // prevMap) frozen the segment at [grid, now] forever, so no real
-     // start/finish crossing ever registered.
+    // Capture the pre-step pose so the gate test sees this tick's
+    // (prev -> cur) segment. Feeding the *previous* stored pose (the old
+    // prevMap) frozen the segment at [grid, now] forever, so no real
+    // start/finish crossing ever registered.
     const prevP: Vec2 = { x: p.body.position.x, y: p.body.position.y };
     this.lastInput = this.input.sample();
     this.stepBody(p, this.lastInput, dt);
@@ -545,7 +550,10 @@ export class Game {
       fps: this.fps,
       look: this.carLook(),
       rivalLook: rivalCarFor(this.arena.track.def).look,
-      controls: { steer: this.lastInput.steer, braking: this.lastInput.brake > 0 },
+      controls: {
+        steer: this.lastInput.steer,
+        braking: this.lastInput.brake > 0,
+      },
       rivalControls: this.racers.map((r) => ({
         steer: r.input.steer,
         braking: r.input.brake > 0,
@@ -579,16 +587,19 @@ export class Game {
     else if (action === "close-settings") this.showMenu();
     else if (action === "toggle-colorblind")
       this.commitSettings({
-         ...this.settings,
+        ...this.settings,
         colorMode: toggleColorMode(this.settings.colorMode),
-       });
+      });
     else if (action === "cycle-hud")
       this.commitSettings({
-         ...this.settings,
+        ...this.settings,
         hudSize: nextHudSize(this.settings.hudSize),
-       });
+      });
     else if (action === "reset-settings")
-      this.commitSettings({ ...this.settings, keyMap: defaultSettings().keyMap });
+      this.commitSettings({
+        ...this.settings,
+        keyMap: defaultSettings().keyMap,
+      });
     else if (action === "toggle-sound") {
       this.commitSettings({ ...this.settings, muted: !this.settings.muted });
       // Mid-race the overlay's button shows the state; redraw it (which
@@ -638,15 +649,15 @@ export class Game {
     }
 
     // Re-render whatever screen we're on so a just-made purchase shows up.
-     // A "rebind" button arms a capture; onRebindKey binds the next key. Any
-     // other click cancels a pending capture so a stray key can't remap.
+    // A "rebind" button arms a capture; onRebindKey binds the next key. Any
+    // other click cancels a pending capture so a stray key can't remap.
     const bind = el.getAttribute("data-bind");
     if (bind !== null) {
       this.rebinding = bind as KeyAction;
       this.rebindNotice = null;
       this.showSettings();
-        return;
-         }
+      return;
+    }
     this.rebinding = null;
     this.rebindNotice = null;
 
@@ -711,12 +722,12 @@ export class Game {
 
   // --- persistence -------------------------------------------------------
 
-   /** Push the current theme to the renderer (palette + HUD size). */
+  /** Push the current theme to the renderer (palette + HUD size). */
   private applyTheme(): void {
     this.renderer.setSettings?.(this.settings.colorMode, this.settings.hudSize);
-     }
+  }
 
-      /** Build the settings UI view model from live prefs + capture state. */
+  /** Build the settings UI view model from live prefs + capture state. */
   private settingsView(): SettingsView {
     return {
       colorMode: this.settings.colorMode,
@@ -726,14 +737,14 @@ export class Game {
         action: a,
         label: ACTION_LABELS[a],
         keys: this.settings.keyMap[a],
-         })),
+      })),
       rebinding: this.rebinding !== null,
       rebindingAction: this.rebinding,
       notice: this.rebindNotice ?? undefined,
-         };
-       }
+    };
+  }
 
-       /** Persist a settings change, then refresh the input + renderer seams. */
+  /** Persist a settings change, then refresh the input + renderer seams. */
   private commitSettings(next: Settings): void {
     this.settings = next;
     this.prog.setSettings(next);
@@ -741,14 +752,14 @@ export class Game {
     this.applyTheme();
     this.audio.setMuted(next.muted);
     this.save();
-       }
+  }
 
-       /**
-        * Capture-phase keydown, active only while rebinding: the next plain key
-        * codes a new binding (modifier combos are ignored; Escape cancels). The
-        * event is swallowed so the driver input never sees a key we just assigned.
-        */
-    private onRebindKey(e: KeyboardEvent): void {
+  /**
+   * Capture-phase keydown, active only while rebinding: the next plain key
+   * codes a new binding (modifier combos are ignored; Escape cancels). The
+   * event is swallowed so the driver input never sees a key we just assigned.
+   */
+  private onRebindKey(e: KeyboardEvent): void {
     if (this.rebinding === null) return;
     e.preventDefault();
     e.stopPropagation();
@@ -757,7 +768,7 @@ export class Game {
       this.rebindNotice = null;
       this.showSettings();
       return;
-          }
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     // R / Q / Backspace already restart or quit; keep capturing and say why.
     if (isReservedCode(e.code)) {
@@ -771,7 +782,7 @@ export class Game {
     if (action === null) return;
     this.commitSettings(rebindSetting(this.settings, action, e.code));
     this.showSettings();
-       }
+  }
 
   private save(): void {
     this.store.save(this.prog.snapshot());

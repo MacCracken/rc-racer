@@ -79,7 +79,8 @@ describe("Ghost — best-lap record + replay", () => {
     expect(g.length).toBe(100);
     expect(g[0].t).toBe(0);
     expect(g[99].t).toBe(49990);
-    for (let i = 1; i < g.length; i++) expect(g[i].t).toBeGreaterThan(g[i - 1].t);
+    for (let i = 1; i < g.length; i++)
+      expect(g[i].t).toBeGreaterThan(g[i - 1].t);
     expect(capGhost(lineGhost(), 100)).toEqual(lineGhost()); // short: untouched
   });
 

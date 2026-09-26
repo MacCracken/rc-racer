@@ -99,7 +99,7 @@ describe("SkidMarks.ageMarks", () => {
     expect(s.marks.length).toBe(2);
     expect(s.marks[0]!.alpha).toBeCloseTo(0.3, 5);
     expect(s.marks[1]!.alpha).toBeCloseTo(0.2, 5);
-   });
+  });
 });
 
 describe("SkidMarks pooling (GC-friendly hot path)", () => {
@@ -109,19 +109,19 @@ describe("SkidMarks pooling (GC-friendly hot path)", () => {
     const first = s.marks[0]!;
     ageMarks(s, SKID_LIFETIME); // both expire -> recycled into the pool
     expect(s.marks.length).toBe(0);
-       // The next lay must reuse a pooled object rather than allocate a new one.
+    // The next lay must reuse a pooled object rather than allocate a new one.
     sampleDrift(s, bodyFrom(0, 0, 0, 120, 150), O);
     expect(s.marks).toContain(first);
-      });
+  });
 
   it("recycles evicted marks when the cap is hit", () => {
     const s = createSkid();
     for (let i = 0; i < MAX_MARKS + 50; i++)
       sampleDrift(s, bodyFrom(0, 0, 0, 120, 150), O);
-       // We're capped, so marks were evicted and their objects pooled for reuse.
+    // We're capped, so marks were evicted and their objects pooled for reuse.
     expect(s.marks.length).toBe(MAX_MARKS);
     expect(s.pool.length).toBeGreaterThan(0);
-      });
+  });
 });
 
 describe("SkidMarks buffer cap", () => {

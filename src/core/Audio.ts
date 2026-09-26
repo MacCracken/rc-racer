@@ -30,7 +30,8 @@ export class WebAudio implements IAudio {
     if (this.ctx !== null) {
       // A context made (or re-suspended, e.g. by Safari) outside a user
       // gesture stays silent until resumed.
-      if (this.ctx.state === "suspended") void this.ctx.resume().catch(() => {});
+      if (this.ctx.state === "suspended")
+        void this.ctx.resume().catch(() => {});
       return this.ctx;
     }
     if (typeof window === "undefined") return null;

@@ -18,7 +18,13 @@ import { carClasses } from "../src/game/cars.ts";
 /** A minimal, fully-owned UiModel for the pure HTML generators. */
 const bars: StatBar[] = [
   { key: "grip", label: "Grip", value: 1, norm: 0.5, text: "50" },
-  { key: "maxSpeed", label: "Top speed", value: 1, norm: 0.5, text: "108 km/h" },
+  {
+    key: "maxSpeed",
+    label: "Top speed",
+    value: 1,
+    norm: 0.5,
+    text: "108 km/h",
+  },
 ];
 
 function model(): UiModel {

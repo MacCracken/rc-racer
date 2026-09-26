@@ -59,7 +59,7 @@ interface TrackArt {
 export class Canvas2DRenderer implements IRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
-   /** Presentation theme, driven by the persisted Settings. */
+  /** Presentation theme, driven by the persisted Settings. */
   private colorMode: ColorMode = "std";
   private hudScale = 1;
   private art: TrackArt | null = null;
@@ -73,11 +73,11 @@ export class Canvas2DRenderer implements IRenderer {
     this.ctx = ctx;
   }
 
-   /** Apply the persisted presentation theme (palette + HUD size). */
+  /** Apply the persisted presentation theme (palette + HUD size). */
   setSettings(colorMode: ColorMode, hudSize: HudSize): void {
     this.colorMode = colorMode;
     this.hudScale = hudScaleOf(hudSize);
-     }
+  }
 
   resize(
     width: number,
@@ -161,7 +161,12 @@ export class Canvas2DRenderer implements IRenderer {
   }
 
   /** Textured ground, locked to world space so it scrolls with the track. */
-  private drawGround(track: BuiltTrack, cam: Camera, w: number, h: number): void {
+  private drawGround(
+    track: BuiltTrack,
+    cam: Camera,
+    w: number,
+    h: number,
+  ): void {
     const { ctx } = this;
     const color = track.def.background ?? "#0d1f14";
     if (this.ground?.color !== color) {
@@ -178,7 +183,14 @@ export class Canvas2DRenderer implements IRenderer {
     }
     const z = cam.zoom;
     this.ground.pattern.setTransform(
-      new DOMMatrix([z, 0, 0, z, w / 2 - cam.view.x * z, h / 2 - cam.view.y * z]),
+      new DOMMatrix([
+        z,
+        0,
+        0,
+        z,
+        w / 2 - cam.view.x * z,
+        h / 2 - cam.view.y * z,
+      ]),
     );
     ctx.fillStyle = this.ground.pattern;
     ctx.fillRect(0, 0, w, h);
@@ -200,7 +212,11 @@ export class Canvas2DRenderer implements IRenderer {
       Math.max(0.5, Math.max(cam.zoom, CAMERA_ZOOM_SLOW) * this.dpr),
     );
     const id = `${track.def.id}|${track.width}`;
-    if (this.art === null || this.art.id !== id || this.art.scale < want * 0.97) {
+    if (
+      this.art === null ||
+      this.art.id !== id ||
+      this.art.scale < want * 0.97
+    ) {
       const scale = Math.min(cap, Math.ceil(want * 4) / 4);
       this.art = this.paintArt(track, id, scale, worldW, worldH);
     }
@@ -350,7 +366,14 @@ export class Canvas2DRenderer implements IRenderer {
     // Rivals get their own pale trim, not the player's accent.
     const rivalTrim = shade(pal.rival, 0.6);
     rivals.forEach((b, i) =>
-      this.drawCarBody(b, rivalLook, pal.rival, rivalTrim, rivalControls[i] ?? IDLE, cam),
+      this.drawCarBody(
+        b,
+        rivalLook,
+        pal.rival,
+        rivalTrim,
+        rivalControls[i] ?? IDLE,
+        cam,
+      ),
     );
     this.drawCarBody(player, look, pal.player, pal.nose, controls, cam);
     ctx.restore();
@@ -498,7 +521,10 @@ export class Canvas2DRenderer implements IRenderer {
 
     // fit the road (centerline +/- half width) into the box
     const half = track.width / 2;
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
     for (const p of track.centerLine) {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
@@ -547,7 +573,13 @@ export class Canvas2DRenderer implements IRenderer {
     const dot = (b: Matter.Body, color: string, r: number): void => {
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(offX + b.position.x * scale, offY + b.position.y * scale, r, 0, Math.PI * 2);
+      ctx.arc(
+        offX + b.position.x * scale,
+        offY + b.position.y * scale,
+        r,
+        0,
+        Math.PI * 2,
+      );
       ctx.fill();
       ctx.stroke();
     };
@@ -557,7 +589,12 @@ export class Canvas2DRenderer implements IRenderer {
     dot(car, pal.player, 3.5);
   }
 
-  private drawConfetti(ctx: CanvasRenderingContext2D, w: number, h: number, ageMs: number): void {
+  private drawConfetti(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    ageMs: number,
+  ): void {
     const duration = 1600;
     if (ageMs > duration) return;
     const t = ageMs / 1000;
