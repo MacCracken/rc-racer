@@ -57,6 +57,23 @@ describe("Upgrades", () => {
       });
 });
 
+describe("Drift Kit", () => {
+  it("every tier makes handbrake slides run farther (lower handbrake grip), never frictionless", () => {
+    const drift = UPGRADE_TREE.find((s) => s.id === "drift")!;
+    for (const car of carClasses) {
+      let prev = car.base.handbrakeGrip;
+      for (let k = 1; k <= drift.tiers.length; k++) {
+        const owned = freshUpgrades();
+        owned.drift = k;
+        const hg = applyBuild(car.base, owned).handbrakeGrip;
+        expect(hg, `${car.id} tier ${k}`).toBeLessThan(prev);
+        expect(hg, `${car.id} tier ${k}`).toBeGreaterThan(0);
+        prev = hg;
+      }
+    }
+  });
+});
+
 describe("Upgrade effectiveness (no no-op tiers)", () => {
       // A tier is a "no-op upgrade" if buying it leaves every resolved stat
       // unchanged — the kind of dead purchase the tuning pass must catch.

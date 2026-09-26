@@ -1,7 +1,7 @@
 {
   "name": "rc-racer",
   "version": "0.0.0",
-  "description": "Top-down arcade RC car racing (browser). Phase 0 scaffold.",
+  "description": "Top-down arcade RC car racing (browser).",
   "type": "module",
   "private": true,
   "scripts": {

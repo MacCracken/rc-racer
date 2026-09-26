@@ -1,23 +1,54 @@
 import type Matter from "matter-js";
 import type { Camera } from "./Camera.ts";
-import type { IRenderer, RenderScene } from "./types.ts";
-import type { BuiltTrack, TrackDef } from "../track/Track.ts";
+import type { CarControls, IRenderer, RenderScene } from "./types.ts";
+import type { BuiltTrack } from "../track/Track.ts";
 import type { RaceState } from "../race/RaceState.ts";
 import type { SkidMark } from "./SkidMarks.ts";
 import type { Ghost } from "../race/Ghost.ts";
-import { CAR_LENGTH, CAR_WIDTH } from "./tuning.ts";
+import { CAR_LENGTH, CAR_WIDTH, KMH_PER_PX_S } from "./tuning.ts";
 import { formatLap, currentLapTimeMs } from "../race/RaceState.ts";
 import {
   carPalette,
   hudScaleOf,
+  shade,
+  type CarLook,
   type ColorMode,
   type HudSize,
 } from "./theme.ts";
+import {
+  paintAsphaltTile,
+  paintGroundTile,
+  paintTrackArt,
+  sceneryFor,
+} from "./trackArt.ts";
+import { paintCar, traceCarShadow } from "./carArt.ts";
+
+/** World px of margin around the track art for scenery + shadows. */
+const ART_MARGIN = 220;
+/** Cap on the cached track art's size, in canvas pixels (~36 MB RGBA). */
+const ART_MAX_PIXELS = 9_000_000;
+/** Ground texture tile size (world px). */
+const GROUND_TILE = 256;
+
+const IDLE: CarControls = { steer: 0, braking: false };
+
+/** The static track, pre-painted at a fixed world->pixel scale. */
+interface TrackArt {
+  key: string;
+  canvas: HTMLCanvasElement;
+  /** World position of the canvas's top-left corner. */
+  x: number;
+  y: number;
+  /** Canvas pixels per world px. */
+  scale: number;
+}
 
 /**
  * Canvas2D top-down renderer. Draws the world in world-space via the camera,
- * then overlays screen-space HUD text. Intentionally small and dependency-free;
- * it's the one Phase-1 class that may be swapped for PixiJS later.
+ * then overlays screen-space HUD text. Everything static about a track (road,
+ * curbs, grid, scenery) is painted once into an offscreen canvas and blitted
+ * each frame, so it can be detailed without costing frame time; the cars are
+ * vectors, crisp at any zoom.
  */
 export class Canvas2DRenderer implements IRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -25,6 +56,10 @@ export class Canvas2DRenderer implements IRenderer {
    /** Presentation theme, driven by the persisted Settings. */
   private colorMode: ColorMode = "std";
   private hudScale = 1;
+  private art: TrackArt | null = null;
+  private ground: { color: string; pattern: CanvasPattern } | null = null;
+  private vignette: { w: number; h: number; fill: CanvasGradient } | null =
+    null;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -66,18 +101,21 @@ export class Canvas2DRenderer implements IRenderer {
       confettiAgeMs,
       fps,
       hud = true,
+      look = "sedan",
+      controls = IDLE,
+      rivalControls = [],
     } = scene;
     const w = this.canvas.width / this.dpr;
     const h = this.canvas.height / this.dpr;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
-    this.drawBackground(track.def, w, h);
-    this.drawTrack(track, camera);
+    this.drawGround(track, camera, w, h);
+    this.drawTrackArt(track, camera);
     this.drawSkidMarks(skidMarks, camera);
     this.drawGhost(ghost, camera);
-    this.drawNextGate(track, camera, race);
-    this.drawRivals(rivals, camera);
-    this.drawCar(car, camera);
+    if (hud) this.drawNextGate(track, camera, race);
+    this.drawCars(car, rivals ?? [], look, controls, rivalControls, camera);
+    this.drawVignette(w, h);
     if (hud)
       this.drawHUD(
         track.def.name,
@@ -100,52 +138,86 @@ export class Canvas2DRenderer implements IRenderer {
 
   // --- world-space rendering ---
 
-  private drawBackground(def: TrackDef, w: number, h: number): void {
+  private makeCanvas(w: number, h: number): HTMLCanvasElement {
+    const c = this.canvas.ownerDocument.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    return c;
+  }
+
+  /** Textured ground, locked to world space so it scrolls with the track. */
+  private drawGround(track: BuiltTrack, cam: Camera, w: number, h: number): void {
     const { ctx } = this;
-    ctx.fillStyle = def.background ?? "#0d1f14";
+    const color = track.def.background ?? "#0d1f14";
+    if (this.ground?.color !== color) {
+      const tile = this.makeCanvas(GROUND_TILE, GROUND_TILE);
+      const g = tile.getContext("2d");
+      if (g !== null) paintGroundTile(g, GROUND_TILE, color);
+      const pattern = g === null ? null : ctx.createPattern(tile, "repeat");
+      this.ground = pattern === null ? null : { color, pattern };
+    }
+    if (this.ground === null) {
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, w, h);
+      return;
+    }
+    const z = cam.zoom;
+    this.ground.pattern.setTransform(
+      new DOMMatrix([z, 0, 0, z, w / 2 - cam.view.x * z, h / 2 - cam.view.y * z]),
+    );
+    ctx.fillStyle = this.ground.pattern;
     ctx.fillRect(0, 0, w, h);
   }
 
-  private drawTrack(track: BuiltTrack, cam: Camera): void {
-    const { ctx } = this;
-    const surface = track.def.surface ?? "#39404a";
-    const road = track.width * cam.zoom;
-    const curb = 10; // screen px, centred on each road edge
-
-    // The road is every point within width/2 of the centerline, which is the
-    // exact band the physics keeps cars in. Stroking the centerline draws
-    // that, rounding the inside of corners tighter than the road is wide,
-    // where the offset `inner`/`outer` outlines fold into little bowties.
-    // Layered strokes (widest first) give the curbs: a red base, white dashes,
-    // then red and asphalt again to trim each curb to a band on the edge.
-    ctx.save();
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    this.tracePolygon(track.centerLine, cam, true);
-    ctx.strokeStyle = "#b23a3a";
-    ctx.lineWidth = road + curb;
-    ctx.stroke();
-    ctx.setLineDash([18, 18]);
-    ctx.strokeStyle = "#f4f4f4";
-    ctx.lineWidth = road + curb / 2;
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.strokeStyle = "#b23a3a";
-    ctx.lineWidth = Math.max(0, road - curb / 2);
-    ctx.stroke();
-    ctx.strokeStyle = surface;
-    ctx.lineWidth = Math.max(0, road - curb);
-    ctx.stroke();
-    ctx.restore();
-
-    // Start / finish line at gate 0.
-    this.drawStartLine(track, cam);
+  /**
+   * Blit the pre-painted track. It is (re)painted when the track changes or
+   * the zoom / pixel density does, at about one canvas pixel per device pixel.
+   */
+  private drawTrackArt(track: BuiltTrack, cam: Camera): void {
+    const b = track.bounds;
+    const worldW = b.maxX - b.minX + ART_MARGIN * 2;
+    const worldH = b.maxY - b.minY + ART_MARGIN * 2;
+    let scale = Math.min(1.5, Math.max(0.5, cam.zoom * this.dpr));
+    scale = Math.min(scale, Math.sqrt(ART_MAX_PIXELS / (worldW * worldH)));
+    const key = `${track.def.id}|${track.width}|${scale.toFixed(3)}`;
+    if (this.art?.key !== key) this.art = this.paintArt(track, key, scale, worldW, worldH);
+    const art = this.art;
+    if (art === null) return;
+    const p = cam.toScreen({ x: art.x, y: art.y });
+    this.ctx.drawImage(
+      art.canvas,
+      p.x,
+      p.y,
+      (art.canvas.width / art.scale) * cam.zoom,
+      (art.canvas.height / art.scale) * cam.zoom,
+    );
   }
 
-  /**
-   * Draw the skid trail on the asphalt, under the cars. Each mark is a short
-   * dark segment oriented with the car's heading, fading with its alpha.
-   */
+  private paintArt(
+    track: BuiltTrack,
+    key: string,
+    scale: number,
+    worldW: number,
+    worldH: number,
+  ): TrackArt | null {
+    const x = track.bounds.minX - ART_MARGIN;
+    const y = track.bounds.minY - ART_MARGIN;
+    const canvas = this.makeCanvas(
+      Math.ceil(worldW * scale),
+      Math.ceil(worldH * scale),
+    );
+    const g = canvas.getContext("2d");
+    if (g === null) return null;
+    const tile = this.makeCanvas(96, 96);
+    const tg = tile.getContext("2d");
+    const surface = track.def.surface ?? "#39404a";
+    if (tg !== null) paintAsphaltTile(tg, 96, surface);
+    const asphalt = (tg && g.createPattern(tile, "repeat")) ?? surface;
+    g.setTransform(scale, 0, 0, scale, -x * scale, -y * scale);
+    paintTrackArt(g, track, asphalt, sceneryFor(track));
+    return { key, canvas, x, y, scale };
+  }
+
   /** Faded best-line overlay the player can chase; cosmetic only. */
   private drawGhost(ghost: Ghost | undefined, cam: Camera): void {
     if (ghost === undefined || ghost.length < 2) return;
@@ -170,6 +242,10 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.restore();
   }
 
+  /**
+   * Draw the skid trail on the asphalt, under the cars. Each mark is a short
+   * dark segment oriented with the car's heading, fading with its alpha.
+   */
   private drawSkidMarks(marks: SkidMark[] | undefined, cam: Camera): void {
     if (marks === undefined || marks.length === 0) return;
     const { ctx } = this;
@@ -202,32 +278,6 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.restore();
   }
 
-  private drawStartLine(track: BuiltTrack, cam: Camera): void {
-    const { ctx } = this;
-    const gate = track.gates[0];
-    if (gate === undefined) return;
-    const a = cam.toScreen(gate.a);
-    const b = cam.toScreen(gate.b);
-    ctx.save();
-    // A simple checkered band: two passes of alternating squares.
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const n = 8;
-    for (let i = 0; i < n; i++) {
-      const t0 = i / n;
-      const t1 = (i + 1) / n;
-      const p0 = { x: a.x + dx * t0, y: a.y + dy * t0 };
-      const p1 = { x: a.x + dx * t1, y: a.y + dy * t1 };
-      ctx.strokeStyle = i % 2 === 0 ? "#fff" : "#111";
-      ctx.lineWidth = 10;
-      ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
   private drawNextGate(track: BuiltTrack, cam: Camera, race: RaceState): void {
     const { ctx } = this;
     const gate = track.gates[race.nextGate];
@@ -245,48 +295,76 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.restore();
   }
 
-  private drawRivals(rivals: Matter.Body[] | undefined, cam: Camera): void {
-    if (rivals === undefined || rivals.length === 0) return;
+  /** Shadows first (so no car's shadow lands on another), then bodies. */
+  private drawCars(
+    player: Matter.Body,
+    rivals: Matter.Body[],
+    look: CarLook,
+    controls: CarControls,
+    rivalControls: CarControls[],
+    cam: Camera,
+  ): void {
     const { ctx } = this;
+    const pal = carPalette(this.colorMode);
+    const all = [...rivals, player];
     ctx.save();
-    ctx.strokeStyle = "#000";
-    ctx.lineWidth = 1;
-    const w = CAR_WIDTH * cam.zoom;
-    const l = CAR_LENGTH * cam.zoom * 0.9;
-    const rival = carPalette(this.colorMode).rival;
-    for (const r of rivals) {
-      const p = cam.toScreen({ x: r.position.x, y: r.position.y });
+    ctx.fillStyle = "rgba(0,0,0,0.32)";
+    for (const b of all) {
+      const p = cam.toScreen(b.position);
       ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(r.angle);
-      ctx.fillStyle = rival;
-      this.roundRect(-l / 2, -w / 2, l, w, 2 * cam.zoom);
+      // Offset in screen space: the light doesn't turn with the car.
+      ctx.translate(p.x + 3 * cam.zoom, p.y + 4.5 * cam.zoom);
+      ctx.rotate(b.angle);
+      ctx.scale(cam.zoom, cam.zoom);
+      traceCarShadow(ctx, look);
       ctx.fill();
-      ctx.stroke();
       ctx.restore();
     }
+    // Rivals get their own pale trim, not the player's accent.
+    const rivalTrim = shade(pal.rival, 0.6);
+    rivals.forEach((b, i) =>
+      this.drawCarBody(b, look, pal.rival, rivalTrim, rivalControls[i] ?? IDLE, cam),
+    );
+    this.drawCarBody(player, look, pal.player, pal.nose, controls, cam);
     ctx.restore();
   }
 
-  private drawCar(car: Matter.Body, cam: Camera): void {
+  private drawCarBody(
+    b: Matter.Body,
+    look: CarLook,
+    body: string,
+    accent: string,
+    c: CarControls,
+    cam: Camera,
+  ): void {
     const { ctx } = this;
-    const p = cam.toScreen({ x: car.position.x, y: car.position.y });
+    const p = cam.toScreen(b.position);
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.rotate(car.angle); // Matter.js angle: 0 = facing +x, which is forward.
-    const w = CAR_WIDTH * cam.zoom;
-    const l = CAR_LENGTH * cam.zoom;
-    const pal = carPalette(this.colorMode);
-    ctx.fillStyle = pal.player;
-    ctx.strokeStyle = "#000";
-    ctx.lineWidth = 2;
-    this.roundRect(-l / 2, -w / 2, l, w, 3 * cam.zoom);
-    ctx.fill();
-    ctx.stroke();
-    // nose marker (fore)
-    ctx.fillStyle = pal.nose;
-    ctx.fillRect(l * 0.1, -w * 0.3, l * 0.15, w * 0.6);
+    ctx.rotate(b.angle); // Matter.js angle: 0 = facing +x, which is forward.
+    ctx.scale(cam.zoom, cam.zoom);
+    paintCar(ctx, look, { body, accent, steer: c.steer, braking: c.braking });
     ctx.restore();
+  }
+
+  /** Darken the screen edges a touch, pulling the eye to the action. */
+  private drawVignette(w: number, h: number): void {
+    const { ctx } = this;
+    if (this.vignette?.w !== w || this.vignette.h !== h) {
+      const fill = ctx.createRadialGradient(
+        w / 2,
+        h / 2,
+        Math.min(w, h) * 0.35,
+        w / 2,
+        h / 2,
+        Math.hypot(w, h) * 0.62,
+      );
+      fill.addColorStop(0, "rgba(0,0,0,0)");
+      fill.addColorStop(1, "rgba(0,0,0,0.4)");
+      this.vignette = { w, h, fill };
+    }
+    ctx.fillStyle = this.vignette.fill;
+    ctx.fillRect(0, 0, w, h);
   }
 
   // --- screen-space HUD ---
@@ -319,7 +397,7 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.fillRect(0, 0, w, barH);
     ctx.fillStyle = "#fff";
 
-    const kmh = Math.round(Math.abs(speed) * 0.6);
+    const kmh = Math.round(Math.abs(speed) * KMH_PER_PX_S);
     // The lap being driven (1-based), not laps completed: the final lap
     // reads 3/3, not 2/3.
     const laps = `${Math.min(race.lap + 1, track.laps)}/${track.laps}`;
@@ -391,47 +469,50 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.fillStyle = "rgba(10,20,12,0.85)";
     ctx.fillRect(mapX, mapY, mapW, mapH);
 
-    // compute bounds from outer ring
-    const pts = track.outer;
+    // fit the road (centerline +/- half width) into the box
+    const half = track.width / 2;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const p of pts) {
+    for (const p of track.centerLine) {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
       if (p.y < minY) minY = p.y;
       if (p.y > maxY) maxY = p.y;
     }
-    const rangeX = Math.max(1, maxX - minX);
-    const rangeY = Math.max(1, maxY - minY);
-    const scale = Math.min(mapW / rangeX, mapH / rangeY) * 0.9;
-    const offX = mapX + (mapW - rangeX * scale) / 2 - minX * scale;
-    const offY = mapY + (mapH - rangeY * scale) / 2 - minY * scale;
+    const rangeX = Math.max(1, maxX - minX + 2 * half);
+    const rangeY = Math.max(1, maxY - minY + 2 * half);
+    const scale = Math.min(mapW / rangeX, mapH / rangeY) * 0.92;
+    const offX = mapX + (mapW - rangeX * scale) / 2 - (minX - half) * scale;
+    const offY = mapY + (mapH - rangeY * scale) / 2 - (minY - half) * scale;
 
-    const to = (p: { x: number; y: number }) => ({
-      x: offX + p.x * scale,
-      y: offY + p.y * scale,
-    });
-
-    // track outline
-    ctx.strokeStyle = "#4a6b4a";
-    ctx.lineWidth = 2;
+    // The road as a band, like the track itself: dark edge, light surface.
+    ctx.save();
+    ctx.lineJoin = "round";
     ctx.beginPath();
-    pts.forEach((p, i) => {
-      const q = to(p);
-      if (i === 0) ctx.moveTo(q.x, q.y);
-      else ctx.lineTo(q.x, q.y);
+    track.centerLine.forEach((p, i) => {
+      const x = offX + p.x * scale;
+      const y = offY + p.y * scale;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     });
     ctx.closePath();
+    const road = Math.max(3, track.width * scale);
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.lineWidth = road + 2;
     ctx.stroke();
+    ctx.strokeStyle = "rgba(170,182,192,0.75)";
+    ctx.lineWidth = road;
+    ctx.stroke();
+    ctx.restore();
 
-    // inner
-    ctx.strokeStyle = "#2b3d2b";
+    // start/finish tick
+    const s0 = track.start.pos;
+    const nx = -Math.sin(track.start.heading) * (road / 2 + 1);
+    const ny = Math.cos(track.start.heading) * (road / 2 + 1);
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    track.inner.forEach((p, i) => {
-      const q = to(p);
-      if (i === 0) ctx.moveTo(q.x, q.y);
-      else ctx.lineTo(q.x, q.y);
-    });
-    ctx.closePath();
+    ctx.moveTo(offX + s0.x * scale - nx, offY + s0.y * scale - ny);
+    ctx.lineTo(offX + s0.x * scale + nx, offY + s0.y * scale + ny);
     ctx.stroke();
 
     // Car dots in the same (colour-blind aware) palette as the cars on track.
@@ -475,38 +556,5 @@ export class Canvas2DRenderer implements IRenderer {
       ctx.fillRect(x, y, size, size * 0.6);
     }
     ctx.restore();
-  }
-
-  // --- geometry helpers ---
-
-  private tracePolygon(
-    pts: { x: number; y: number }[],
-    cam: Camera,
-    close: boolean,
-  ): void {
-    const { ctx } = this;
-    for (let i = 0; i < pts.length; i++) {
-      const p = cam.toScreen(pts[i]);
-      if (i === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    }
-    if (close) ctx.closePath();
-  }
-
-  private roundRect(
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    r: number,
-  ): void {
-    const { ctx } = this;
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
   }
 }

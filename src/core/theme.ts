@@ -30,6 +30,26 @@ export function carPalette(mode: ColorMode): CarPalette {
   return { player: "#f5c542", nose: "#ffe9a8", rival: "#4aa3ff" };
 }
 
+/** Body style a car class is drawn with (see `core/carArt.ts`). */
+export type CarLook = "sedan" | "buggy" | "brawler";
+
+/**
+ * Lighten (`t` > 0, toward white) or darken (`t` < 0, toward black) a
+ * `#rrggbb` colour by |t| (0..1). Used to derive body shading and trim from a
+ * single palette colour, so the colour-blind palette shades the same way.
+ */
+export function shade(hex: string, t: number): string {
+  const n = parseInt(hex.slice(1, 7), 16);
+  if (!/^#[0-9a-f]{6}$/i.test(hex) || Number.isNaN(n)) return hex;
+  const k = Math.max(-1, Math.min(1, t));
+  const mix = (c: number): number =>
+    Math.round(k >= 0 ? c + (255 - c) * k : c * (1 + k));
+  const r = mix((n >> 16) & 255);
+  const g = mix((n >> 8) & 255);
+  const b = mix(n & 255);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+}
+
 /** HUD size presets the player can pick; each maps to a dimension scale. */
 export type HudSize = "sm" | "md" | "lg";
 
@@ -50,6 +70,7 @@ export function hudScaleOf(size: HudSize): number {
 export function keyLabel(code: string): string {
   if (code.startsWith("Key")) return code.slice(3);
   if (code.startsWith("Digit")) return code.slice(5);
+  if (code.startsWith("Numpad")) return `Num ${code.slice(6)}`;
   switch (code) {
     case "ArrowUp":
       return "↑";
@@ -61,6 +82,22 @@ export function keyLabel(code: string): string {
       return "→";
     case "Space":
       return "Space";
+    case "ShiftLeft":
+      return "L-Shift";
+    case "ShiftRight":
+      return "R-Shift";
+    case "Semicolon":
+      return ";";
+    case "Quote":
+      return "'";
+    case "Comma":
+      return ",";
+    case "Period":
+      return ".";
+    case "BracketLeft":
+      return "[";
+    case "BracketRight":
+      return "]";
     default:
       return code;
   }

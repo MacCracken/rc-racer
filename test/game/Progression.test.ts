@@ -113,6 +113,20 @@ describe("Progression — earn / spend / record", () => {
     expect(p.credits).toBe(100);
   });
 
+  it("announces a newly affordable car once, on the race that reaches its price", () => {
+    const p = Progression.fresh();
+    p.setCredits(450); // buggy costs 500
+    const race = {
+      trackId: "overture",
+      carId: "street-sedan",
+      laps: 3,
+      bestLapMs: 18000,
+      finished: true,
+    };
+    expect(p.recordRace(race).unlockedCar).toBe("buggy");
+    expect(p.recordRace(race).unlockedCar).toBeNull(); // already affordable
+  });
+
   it("cannot select (and so race) a car it doesn't own", () => {
     const p = Progression.fresh();
     expect(p.selectCar("brawler")).toBe(false);

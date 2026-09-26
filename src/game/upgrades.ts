@@ -1,4 +1,4 @@
-import type { CarStats } from "../core/tuning.ts";
+import { KMH_PER_PX_S, type CarStats } from "../core/tuning.ts";
 
 /**
  * Upgrade tree, data-driven. Each *slot* (a component family) has a stack of
@@ -225,23 +225,23 @@ export const UPGRADE_TREE: UpgradeSlot[] = [
     id: "drift",
     name: "Drift Kit",
     tiers: [
-      t("E-brake", 100, { handbrakeGrip: 0.01 }, "Initiate slides on demand."),
+      t("E-brake", 100, { handbrakeGrip: -0.002 }, "Initiate slides on demand."),
       t(
         "Differential",
         240,
-        { handbrakeGrip: 0.015, grip: 0.01 },
+        { handbrakeGrip: -0.002, grip: 0.01 },
         "Cleaner, controlled oversteer.",
       ),
       t(
         "Drift diff",
         440,
-        { handbrakeGrip: 0.02, grip: 0.015 },
+        { handbrakeGrip: -0.002, grip: 0.015 },
         "Hold a long slide.",
       ),
       t(
         "LSD + setup",
         680,
-        { handbrakeGrip: 0.025, grip: 0.02 },
+        { handbrakeGrip: -0.002, grip: 0.02 },
         "Maximum drift control.",
       ),
     ],
@@ -290,21 +290,38 @@ export interface StatBar {
   label: string;
   value: number;
   norm: number;
+  /** Readout: km/h for top speed, else a 0-100 rating (raw grip is ~0.2). */
+  text: string;
 }
-const STAT_META: { key: keyof CarStats; label: string; absMax: number }[] = [
+const STAT_META: {
+  key: keyof CarStats;
+  label: string;
+  absMax: number;
+  /** Lower is better (less handbrake grip = a longer drift). */
+  invert?: boolean;
+}[] = [
   { key: "maxSpeed", label: "Top speed", absMax: 360 },
   { key: "accel", label: "Acceleration", absMax: 260 },
   { key: "grip", label: "Grip", absMax: 0.4 },
   { key: "braking", label: "Braking", absMax: 400 },
   { key: "turnRate", label: "Handling", absMax: 5.5 },
+  { key: "handbrakeGrip", label: "Drift", absMax: 0.05, invert: true },
 ];
 export function statBars(stats: CarStats): StatBar[] {
-  return STAT_META.map((m) => ({
-    key: m.key,
-    label: m.label,
-    value: stats[m.key],
-    norm: Math.min(1, Math.max(0, stats[m.key] / m.absMax)),
-  }));
+  return STAT_META.map((m) => {
+    const ratio = Math.min(1, Math.max(0, stats[m.key] / m.absMax));
+    const norm = m.invert ? 1 - ratio : ratio;
+    return {
+      key: m.key,
+      label: m.label,
+      value: stats[m.key],
+      norm,
+      text:
+        m.key === "maxSpeed"
+          ? `${Math.round(stats.maxSpeed * KMH_PER_PX_S)} km/h`
+          : String(Math.round(norm * 100)),
+    };
+  });
 }
 
 function applyDelta(stats: CarStats, delta: Partial<CarStats>): CarStats {

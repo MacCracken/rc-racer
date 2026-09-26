@@ -215,12 +215,15 @@ button {
 
 /* GARAGE ---------------------------------------------------------------- */
 
+/* Fills its .screen, which sets the width: a fixed 960px here overflowed the
+   920px screen, pushing the garage's prices off a 1024px-wide window. */
 .panel {
   background: rgba(8, 14, 11, 0.94);
   border: 1px solid #2a3830;
   border-radius: 16px;
   padding: 20px 26px;
-  width: min(960px, 94vw);
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .panel-head {
@@ -280,7 +283,7 @@ button {
 }
 
 .stat-val {
-  width: 36px;
+  width: 64px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -310,10 +313,17 @@ button {
   cursor: not-allowed;
 }
 
+.mini-car i {
+  margin-left: 6px;
+  font-style: normal;
+  color: #7dff9b;
+}
+
 .slot {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   width: 100%;
   background: #14201a;
   border: 1px solid #263a30;
@@ -346,10 +356,24 @@ button {
   font-size: 12px;
 }
 
+.slot-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+}
+
+.slot-next {
+  font-size: 11px;
+  color: #8a9e92;
+}
+
 .slot-cost {
   color: #7dff9b;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .empty {
@@ -358,7 +382,55 @@ button {
   font-size: 13px;
 }
 
+/* ONBOARDING ------------------------------------------------------------ */
+.screen-onboarding {
+  width: min(640px, 92vw);
+}
+
+.onboarding-panel {
+  background: rgba(8, 14, 11, 0.9);
+  border: 1px solid #2a3830;
+  border-radius: 16px;
+  padding: 28px 32px;
+  backdrop-filter: blur(3px);
+}
+
+.onboarding-title {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #ffe9a8;
+  margin-bottom: 12px;
+}
+
+.onboarding-body p {
+  margin: 10px 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #dfeee6;
+}
+
+.onboarding-body b {
+  color: #7dff9b;
+}
+
+.onboarding-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.onboarding-actions button {
+  margin-top: 0;
+}
+
 /* RESULTS --------------------------------------------------------------- */
+/* A compact card, so more of the track (and the confetti) shows around it. */
+.screen-results {
+  width: min(520px, 92vw);
+}
 .results-panel {
   text-align: center;
 }

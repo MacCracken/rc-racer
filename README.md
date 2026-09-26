@@ -10,7 +10,7 @@ tracks.** Depth comes from two places: a car that _feels_ good to drive
 (traction, drift, weight, downforce), and a meaningful upgrade tree across many
 stats and many tracks.
 
-This repo currently holds the project plan. See **[roadmap.md](./roadmap.md)**
+The game is playable (`npm run dev`). See **[roadmap.md](./roadmap.md)**
 for the phase-by-phase build path.
 
 - Concept: see `CONCEPT.md`

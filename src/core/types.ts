@@ -3,7 +3,13 @@ import type { Camera } from "./Camera.ts";
 import type { BuiltTrack } from "../track/Track.ts";
 import type { SkidMark } from "./SkidMarks.ts";
 import type { RaceState } from "../race/RaceState.ts";
-import type { ColorMode, HudSize } from "./theme.ts";
+import type { CarLook, ColorMode, HudSize } from "./theme.ts";
+
+/** A car's live controls, as drawn: turned front wheels + brake lights. */
+export interface CarControls {
+  steer: number;
+  braking: boolean;
+}
 
 /**
  * The renderer seam. Phase 0: Canvas2D. Swap `Canvas2DRenderer` for a PixiJS /
@@ -35,6 +41,12 @@ export interface RenderScene {
   fps?: number;
    /** Draw the race HUD (timers, position, minimap)? Defaults to true. */
   hud?: boolean;
+   /** Body style of every car on track (rivals race the player's class). */
+  look?: CarLook;
+   /** The player's live controls, for the wheels + brake lights. */
+  controls?: CarControls;
+   /** Each rival's live controls, aligned with `rivals`. */
+  rivalControls?: CarControls[];
 }
 
 export interface IRenderer {

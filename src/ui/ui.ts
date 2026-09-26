@@ -8,6 +8,7 @@ import type { StatBar } from "../game/upgrades.ts";
 import type { RaceOutcome } from "../game/progression.ts";
 import { keyLabel, type ColorMode, type HudSize } from "../core/theme.ts";
 import { formatLap } from "../race/RaceState.ts";
+import { defaultKeyMap, type KeyAction, type KeyMap } from "../core/Input.ts";
 
 export type Screen =
      | "menu"
@@ -48,6 +49,9 @@ export interface UpgradeRow {
   nextCost: number;
   maxed: boolean;
   canAfford: boolean;
+  /** The next tier's name + what it does, so a purchase isn't a blind buy. */
+  nextName?: string;
+  nextDesc?: string;
 }
 
 export interface UiModel {
@@ -56,6 +60,8 @@ export interface UiModel {
   tracks: TrackRow[];
   statBars: StatBar[];
   upgrades: UpgradeRow[];
+  /** Live key bindings, so on-screen hints name the keys actually bound. */
+  keyMap: KeyMap;
 }
 
 /** What the results panel renders: the economy outcome + the race's finish info. */
@@ -85,6 +91,34 @@ export interface SettingsView {
   rebindingAction: string | null;
   /** Why the last key press was refused (e.g. a reserved key), if any. */
   notice?: string;
+}
+
+const DRIVE_ACTIONS: KeyAction[] = [
+  "throttle",
+  "brake",
+  "steerLeft",
+  "steerRight",
+];
+
+/**
+ * The controls line shown on the menu, in the race and in How to Play, built
+ * from the live bindings so a rebind is reflected everywhere. The stock
+ * layout keeps its familiar short form ("WASD / arrows to drive").
+ */
+export function controlsHint(km: KeyMap): string {
+  const keys = (a: KeyAction): string =>
+    km[a].length > 0 ? km[a].map(keyLabel).join("/") : "unbound";
+  const stock = defaultKeyMap();
+  const stockDriving = DRIVE_ACTIONS.every(
+    (a) =>
+      km[a].length === stock[a].length &&
+      stock[a].every((code) => km[a].includes(code)),
+  );
+  const drive = stockDriving
+    ? "WASD / arrows to drive"
+    : `${keys("throttle")} gas · ${keys("brake")} brake · ` +
+      `${keys("steerLeft")} left · ${keys("steerRight")} right`;
+  return `${drive} · ${keys("handbrake")} handbrake · R restart · Esc or Q to menu`;
 }
 
 const HUD_SIZE_LABEL: Record<HudSize, string> = {
@@ -159,7 +193,7 @@ export function menuHtml(m: UiModel): string {
           <button class="primary" data-action="start">Start race</button>
         </div>
       </div>
-      <div class="hint">WASD/arrows to drive · Space handbrake · R restart · Esc or Q to menu</div>
+      <div class="hint">${esc(controlsHint(m.keyMap))}</div>
       <div class="menu-actions">
         <button class="ghost" data-action="garage">Open garage</button>
         <button class="ghost" data-action="howto">How to Play</button>
@@ -178,7 +212,7 @@ export function garageHtml(m: UiModel): string {
       <div class="stat">
        <span class="stat-label">${esc(b.label)}</span>
        <span class="bar"><span class="bar-fill" style="width:${pct}%"></span></span>
-       <span class="stat-val">${b.value.toFixed(0)}</span>
+       <span class="stat-val">${esc(b.text)}</span>
       </div>`;
         })
       .join("");
@@ -192,9 +226,16 @@ export function garageHtml(m: UiModel): string {
          ]
             .filter(Boolean)
             .join(" ");
+        const next =
+          u.maxed || u.nextName === undefined
+            ? ""
+            : `<span class="slot-next">Next: ${esc(u.nextName)}${u.nextDesc ? " — " + esc(u.nextDesc) : ""}</span>`;
         return `
       <button class="${cls}" data-buy="${u.slot}"${u.maxed ? " disabled" : ""}>
-        <span class="slot-name">${esc(u.name)} <em>L${u.level}${u.level > 0 ? "/" + u.maxLevel : ""}</em></span>
+        <span class="slot-info">
+          <span class="slot-name">${esc(u.name)} <em>L${u.level}/${u.maxLevel}</em></span>
+          ${next}
+        </span>
         <span class="slot-cost">${u.maxed ? "MAX" : u.nextCost + " cr"}</span>
       </button>`;
         })
@@ -270,28 +311,29 @@ export function resultsHtml(view: ResultsView): string {
 // --- RACE (in-race overlay; the live HUD is drawn on the canvas itself) ---
 
 /** Minimal overlay shown during a race: a quit control + the key hint. */
-export function raceOverlay(): string {
+export function raceOverlay(km: KeyMap): string {
   return `
      <div class="screen screen-race-overlay">
        <button class="ghost quit" data-action="quit">◀ Menu</button>
-       <div class="hint race-hint">WASD / arrows · Space handbrake · R restart · Esc or Q to menu</div>
+       <div class="hint race-hint">${esc(controlsHint(km))}</div>
      </div>`;
 }
 
 /** Onboarding / how-to screen. */
-export function onboardingHtml(): string {
+export function onboardingHtml(km: KeyMap): string {
   return `
      <div class="screen screen-onboarding">
        <div class="onboarding-panel">
          <div class="onboarding-title">How to Play — RC Racer</div>
          <div class="onboarding-body">
-           <p><b>Drive:</b> WASD / Arrow keys to steer and throttle. Space for handbrake/drift. R to restart.</p>
+           <p><b>Drive:</b> ${esc(controlsHint(km))}. Hold the handbrake through a corner to drift.</p>
            <p><b>Race:</b> Complete laps, beat your best time and finish ahead of the AI rivals.</p>
            <p><b>Earn → Upgrade → Go Faster:</b> Credits are awarded for finishing. Spend them in the Garage to upgrade Engine, Tires, Brakes, Suspension, Aero, Chassis and Drift Kit. Each upgrade changes real physics.</p>
            <p><b>Progress:</b> Clear a track to unlock the next. Pick different car classes for different tracks.</p>
          </div>
          <div class="onboarding-actions">
-           <button class="primary" data-action="close-onboarding">Got it — Start Racing</button>
+           <button class="ghost" data-action="close-onboarding">◀ Menu</button>
+           <button class="primary" data-action="start">Got it — Start Racing</button>
          </div>
        </div>
      </div>`;

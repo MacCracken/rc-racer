@@ -7,7 +7,14 @@
  */
 import { FixedTimestepLoop } from "../core/FixedTimestepLoop.ts";
 import { Camera } from "../core/Camera.ts";
-import { KeyboardInput, KEY_ACTIONS, type IInput, type InputState, type KeyAction } from "../core/Input.ts";
+import {
+  KeyboardInput,
+  KEY_ACTIONS,
+  neutralInput,
+  type IInput,
+  type InputState,
+  type KeyAction,
+} from "../core/Input.ts";
 import {
   createArena,
   stepCar,
@@ -57,7 +64,7 @@ import {
   type ResultsView,
 } from "../ui/ui.ts";
 import type { Vec2 } from "../core/vec.ts";
-import { ACTION_LABELS, keyLabel } from "../core/theme.ts";
+import { ACTION_LABELS, keyLabel, type CarLook } from "../core/theme.ts";
 import {
   defaultSettings,
   isReservedCode,
@@ -81,6 +88,8 @@ interface Racer {
   race: RaceState;
   driver: (d: BodyState) => InputState;
   prev: Vec2;
+  /** Last input the autopilot gave, for the rival's wheels + brake lights. */
+  input: InputState;
 }
 
 export interface GameDeps {
@@ -112,6 +121,10 @@ export class Game {
   private fps = 0;
   private fpsAcc = 0;
   private fpsFrames = 0;
+  /** Pixel density the canvas was last sized for (0 = not yet). */
+  private dpr = 0;
+  /** The player's input on the last step, for the car's wheels + lights. */
+  private lastInput: InputState = neutralInput();
 
   private arena: Arena;
   private playerRace: RaceState;
@@ -223,6 +236,9 @@ export class Game {
   }
 
   private frame(nowMs: number): void {
+    // Dragging the window to a screen with another pixel density fires no
+    // resize event; re-size the canvas so it doesn't render blurry.
+    if ((window.devicePixelRatio || 1) !== this.dpr) this.onResize();
     const delta = (nowMs - this.lastFrameMs) / 1000;
     this.lastFrameMs = nowMs;
     this.loop.update(delta);
@@ -239,6 +255,7 @@ export class Game {
 
   private onResize(): void {
     const dpr = window.devicePixelRatio || 1;
+    this.dpr = dpr;
     this.renderer.resize(window.innerWidth, window.innerHeight, dpr);
     this.camera.setViewport(window.innerWidth, window.innerHeight);
   }
@@ -265,7 +282,7 @@ export class Game {
 
   private showOnboarding(): void {
     this.screen = "onboarding";
-    this.uiRoot.innerHTML = onboardingHtml();
+    this.uiRoot.innerHTML = onboardingHtml(this.settings.keyMap);
   }
 
   private showSettings(): void {
@@ -278,6 +295,11 @@ export class Game {
     this.trackDefs[0];
 
   private currentStats = () => this.prog.resolveStats(this.prog.selectedCarId);
+
+  /** Body style of the selected car (rivals race the same class). */
+  private carLook = (): CarLook =>
+    this.carClasses.find((c) => c.id === this.prog.selectedCarId)?.look ??
+    "sedan";
 
   private syncPreviewCamera(): void {
     const p = this.arena.cars[0];
@@ -312,6 +334,7 @@ export class Game {
     this.racers = [];
     this.playerRace = new RaceState(this.arena.track, () => this.clockMs);
     this.skid = createSkid();
+    this.lastInput = neutralInput();
     this.ghost = this.prog.ghostFor(this.currentTrack().id);
     this.lastResults = null;
   }
@@ -347,14 +370,16 @@ export class Game {
         race: new RaceState(this.arena.track, () => this.clockMs),
         driver: makeDriver(track, { pace: c.pace, lookahead: 0.05 }),
         prev: { x: c.body.position.x, y: c.body.position.y },
+        input: neutralInput(),
       });
     }
     this.finished = false;
     this.lastResults = null;
     this.skid = createSkid();
+    this.lastInput = neutralInput();
     this.prevLap = 0;
     this.screen = "race";
-    this.uiRoot.innerHTML = raceOverlay();
+    this.uiRoot.innerHTML = raceOverlay(this.settings.keyMap);
     const p = this.arena.cars[0]!;
     this.camera.view = { x: p.body.position.x, y: p.body.position.y };
   }
@@ -373,7 +398,8 @@ export class Game {
      // prevMap) frozen the segment at [grid, now] forever, so no real
      // start/finish crossing ever registered.
     const prevP: Vec2 = { x: p.body.position.x, y: p.body.position.y };
-    this.stepBody(p, this.input.sample(), dt);
+    this.lastInput = this.input.sample();
+    this.stepBody(p, this.lastInput, dt);
     this.playerRace.update(prevP, p.body.position);
 
     // Tire-smoke trail: lay skids while the player slides, fade them over time.
@@ -391,6 +417,7 @@ export class Game {
         velocity: r.car.body.velocity,
         angle: r.car.body.angle,
       });
+      r.input = inp;
       this.stepBody(r.car, inp, dt);
       r.race.update(r.prev, r.car.body.position);
       r.prev = { x: r.car.body.position.x, y: r.car.body.position.y };
@@ -400,7 +427,8 @@ export class Game {
     this.followCamera(dt);
 
     if (this.playerRace.lap > this.prevLap) {
-      this.audio.play("lap");
+      // The final lap gets the finish chime instead (not both at once).
+      if (!this.playerRace.finished) this.audio.play("lap");
       this.prevLap = this.playerRace.lap;
     }
     if (this.playerRace.finished) this.finalizeRace();
@@ -492,6 +520,12 @@ export class Game {
           ? undefined
           : this.lastFrameMs - this.confettiStartFrameMs,
       fps: this.fps,
+      look: this.carLook(),
+      controls: { steer: this.lastInput.steer, braking: this.lastInput.brake > 0 },
+      rivalControls: this.racers.map((r) => ({
+        steer: r.input.steer,
+        braking: r.input.brake > 0,
+      })),
       // The race HUD belongs to a race (and its results); on the menus it
       // just peeks out around the panels.
       hud: this.screen === "race" || this.screen === "results",
@@ -625,6 +659,8 @@ export class Game {
         nextCost: next?.cost ?? 0,
         maxed: next === null,
         canAfford: next !== null && credits >= next.cost,
+        nextName: next?.name,
+        nextDesc: next?.description,
       };
     });
 
@@ -634,6 +670,7 @@ export class Game {
       tracks: trackRows,
       statBars: statBars(this.currentStats()),
       upgrades,
+      keyMap: this.settings.keyMap,
     };
   }
 

@@ -4,16 +4,21 @@ import {
   garageHtml,
   resultsHtml,
   raceOverlay,
+  onboardingHtml,
   settingsHtml,
+  controlsHint,
   type UiModel,
   type ResultsView,
 } from "../src/ui/ui.ts";
-import type { StatBar } from "../src/game/upgrades.ts";
+import { statBars, type StatBar } from "../src/game/upgrades.ts";
+import { defaultKeyMap } from "../src/core/Input.ts";
+import { defaultSettings, rebindSetting } from "../src/game/settings.ts";
+import { carClasses } from "../src/game/cars.ts";
 
 /** A minimal, fully-owned UiModel for the pure HTML generators. */
 const bars: StatBar[] = [
-  { key: "grip", label: "Grip", value: 1, norm: 0.5 },
-  { key: "maxSpeed", label: "Top speed", value: 1, norm: 0.5 },
+  { key: "grip", label: "Grip", value: 1, norm: 0.5, text: "50" },
+  { key: "maxSpeed", label: "Top speed", value: 1, norm: 0.5, text: "108 km/h" },
 ];
 
 function model(): UiModel {
@@ -55,6 +60,7 @@ function model(): UiModel {
         canAfford: false,
       },
     ],
+    keyMap: defaultKeyMap(),
   };
 }
 
@@ -97,10 +103,16 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
   });
 
   it("race overlay offers a clickable quit control (regression: had no way to quit)", () => {
-    const html = raceOverlay();
+    const html = raceOverlay(defaultKeyMap());
     expect(html).toContain('data-action="quit"');
     // It should also advertise the Esc/Q shortcut.
     expect(html.toLowerCase()).toContain("esc");
+  });
+
+  it("How to Play can start a race (as its button says) or go back to the menu", () => {
+    const html = onboardingHtml(defaultKeyMap());
+    expect(html).toMatch(/data-action="start"[^>]*>Got it — Start Racing/);
+    expect(html).toContain('data-action="close-onboarding"');
   });
 
   it("a new-record result shows the record banner", () => {
@@ -127,6 +139,40 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
     });
     expect(html).toContain("1/10 Buggy");
     expect(html).not.toContain("Unlocked:");
+  });
+
+  it("control hints follow the live key bindings everywhere they appear", () => {
+    const stock = defaultKeyMap();
+    expect(controlsHint(stock)).toContain("WASD / arrows to drive");
+    expect(controlsHint(stock)).toContain("Space handbrake");
+
+    let s = defaultSettings();
+    s = rebindSetting(s, "handbrake", "KeyE");
+    s = rebindSetting(s, "throttle", "KeyI");
+    const hint = controlsHint(s.keyMap);
+    expect(hint).toContain("E handbrake");
+    expect(hint).toContain("I gas");
+    expect(hint).not.toContain("WASD");
+    expect(hint).not.toContain("Space");
+
+    const m = { ...model(), keyMap: s.keyMap };
+    for (const html of [
+      menuHtml(m),
+      raceOverlay(s.keyMap),
+      onboardingHtml(s.keyMap),
+    ]) {
+      expect(html).toContain("E handbrake");
+      expect(html).not.toContain("Space handbrake");
+    }
+  });
+
+  it("garage stats read sensibly: km/h for speed, 0-100 ratings (grip isn't '0')", () => {
+    const sedan = carClasses.find((c) => c.id === "street-sedan")!.base;
+    const html = garageHtml({ ...model(), statBars: statBars(sedan) });
+    expect(html).toContain("108 km/h"); // 180 px/s, as the HUD speedo reads it
+    const grip = statBars(sedan).find((b) => b.key === "grip")!;
+    expect(Number(grip.text)).toBeGreaterThan(0);
+    expect(html).toContain("Drift");
   });
 
   it("settings explain a refused key while capture stays armed", () => {

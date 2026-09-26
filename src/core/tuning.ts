@@ -15,6 +15,12 @@ export const CAMERA_LOOKAHEAD = 0.35;    // fraction of velocity to look ahead
 export const GATE_SUBSTEPS = 4;         // sub-steps per fixed dt for gate checks
 export const GATE_TOLERANCE = 6;        // px tolerance for gate crossing
 
+// Wall contact. The speed driving *into* a wall is cancelled, bouncing back
+// WALL_BOUNCE of it; the speed sliding *along* the wall loses WALL_FRICTION x
+// the into-wall speed. So a graze costs a little and a head-on hit a lot.
+export const WALL_BOUNCE = 0.3;
+export const WALL_FRICTION = 0.5;
+
 /**
  * Drivability of a single car. Phase 1 hardcodes `defaultCarStats`. Phase 2
  * turns these into a data-driven upgrade model (the upgrade tree mutates a
@@ -48,3 +54,6 @@ export const defaultCarStats: CarStats = {
 // Body geometry (world px). Car length runs along local +x.
 export const CAR_LENGTH = 30;
 export const CAR_WIDTH = 16;
+
+/** Display km/h per px/s of speed (HUD speedometer + garage top speed). */
+export const KMH_PER_PX_S = 0.6;

@@ -3,9 +3,11 @@ import {
   CAR_LENGTH,
   CAR_WIDTH,
   defaultCarStats,
+  WALL_BOUNCE,
+  WALL_FRICTION,
   type CarStats,
 } from "../core/tuning.ts";
-import type { BuiltTrack } from "../track/Track.ts";
+import { gridSlot, type BuiltTrack } from "../track/Track.ts";
 import type { InputState } from "../core/Input.ts";
 
 const CAR_HALF = Math.max(CAR_LENGTH, CAR_WIDTH) / 2;
@@ -66,45 +68,6 @@ function buildWalls(track: BuiltTrack): M.Body[] {
   addRing(track.outer);
   addRing(track.inner);
   return walls;
-}
-
-/** Spacing between starting-grid rows (a car length plus a gap). */
-const GRID_ROW = 42;
-
-/**
- * Pose of starting-grid slot `slot`: slot 0 (pole) sits on the start line; the
- * rest fill a staggered two-wide grid behind it, walked back *along the
- * centerline* so every car starts on the asphalt even when the line is on a
- * bend. (Lateral offsets alone put the outer cars past the track edge.)
- */
-function gridSlot(
-  track: BuiltTrack,
-  slot: number,
-): { x: number; y: number; heading: number } {
-  const { pos, heading } = track.start;
-  if (slot <= 0) return { x: pos.x, y: pos.y, heading };
-  const cl = track.centerLine;
-  const n = cl.length;
-  const side = (slot % 2 === 1 ? 1 : -1) * track.width * 0.22;
-  let back = Math.ceil(slot / 2) * GRID_ROW;
-  // Walk backwards from the start (centerline point 0), segment by segment.
-  for (let k = 0; k < n; k++) {
-    const b = cl[(n - k) % n];
-    const a = cl[(n - k - 1) % n];
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    if (back > len && k < n - 1) {
-      back -= len;
-      continue;
-    }
-    const f = len === 0 ? 0 : Math.min(1, back / len);
-    const h = Math.atan2(b.y - a.y, b.x - a.x);
-    return {
-      x: b.x + (a.x - b.x) * f - Math.sin(h) * side,
-      y: b.y + (a.y - b.y) * f + Math.cos(h) * side,
-      heading: h,
-    };
-  }
-  return { x: pos.x, y: pos.y, heading };
 }
 
 /**
@@ -312,13 +275,20 @@ export function stepCar(
     const overflow = seg.dist - limit;
     car.position.x += nx * overflow;
     car.position.y += ny * overflow;
-    // scrub the outward velocity component + bleed some energy on impact
-    const outward = vx2 * -nx + vy2 * -ny;
-    if (outward > 0) {
-      vx2 += nx * outward * 1.4;
-      vy2 += ny * outward * 1.4;
-      vx2 *= 0.45;
-      vy2 *= 0.45;
+    // Split the velocity into the part driving into the wall and the part
+    // sliding along it: cancel the first with a small bounce, and scrub the
+    // second in proportion to how hard we hit. (Scaling *all* speed by 0.45
+    // on every contact step made even a 5° graze halve the car's speed.)
+    const into = -(vx2 * nx + vy2 * ny);
+    if (into > 0) {
+      const tx = -ny;
+      const ty = nx;
+      const along = vx2 * tx + vy2 * ty;
+      const kept =
+        Math.sign(along) * Math.max(0, Math.abs(along) - WALL_FRICTION * into);
+      const back = WALL_BOUNCE * into;
+      vx2 = tx * kept + nx * back;
+      vy2 = ty * kept + ny * back;
     }
   }
   car.velocity.x = vx2;

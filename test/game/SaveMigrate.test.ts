@@ -116,6 +116,15 @@ describe("Save migration — schema bump (v1 -> v3)", () => {
     expect(out.selectedCar).toBe("street-sedan");
   });
 
+  it("never selects a track that is still locked", () => {
+    expect(migrate({ selectedTrack: "slalom", clearedTracks: [] }).selectedTrack).toBe(
+      "overture",
+    );
+    expect(
+      migrate({ selectedTrack: "hairpin", clearedTracks: ["overture"] }).selectedTrack,
+    ).toBe("hairpin");
+  });
+
   it("caps an oversized stored ghost so it can't crowd the save", () => {
     const pts = Array.from({ length: 5000 }, (_, i) => ({
       t: i * 8,

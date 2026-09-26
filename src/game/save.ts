@@ -122,11 +122,11 @@ export function migrate(input: unknown): SaveData {
       : data.ownedCars[0];
   data.upgrades[data.selectedCar] =
     data.upgrades[data.selectedCar] ?? freshUpgrades();
-  if (
-    typeof raw.selectedTrack === "string" &&
-    tracks.some((x) => x.id === raw.selectedTrack)
-  ) {
-    data.selectedTrack = raw.selectedTrack;
+  // Likewise only an unlocked track (the first, or one whose predecessor is
+  // cleared): the menu would never let you start a race on a locked one.
+  const ti = tracks.findIndex((x) => x.id === raw.selectedTrack);
+  if (ti === 0 || (ti > 0 && data.clearedTracks.includes(tracks[ti - 1].id))) {
+    data.selectedTrack = tracks[ti].id;
   }
    // UI prefs ride the same save; a legacy save that lacks them keeps defaults.
   if (raw.settings !== undefined)

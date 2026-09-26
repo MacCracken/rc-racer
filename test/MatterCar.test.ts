@@ -5,7 +5,7 @@ import {
   stepCar,
   forwardSpeed,
 } from "../src/physics/MatterCar.ts";
-import { buildTrack } from "../src/track/Track.ts";
+import { buildTrack, type TrackDef } from "../src/track/Track.ts";
 import { dustBowl, tracks } from "../src/track/tracks.ts";
 import { CAR_LENGTH, CAR_WIDTH, defaultCarStats } from "../src/core/tuning.ts";
 import type { Vec2 } from "../src/core/vec.ts";
@@ -82,6 +82,48 @@ describe("MatterCar physics", () => {
     expect(stayedInBand).toBe(true);
     expect(walls.every((w) => w.isStatic)).toBe(true);
     expect(car.isStatic).toBe(false);
+  });
+});
+
+describe("wall contact", () => {
+  // A huge circle is locally almost straight: the wall at (R + limit, 0)
+  // faces +x, and the road runs along +y there.
+  const R = 3000;
+  const ring: TrackDef = {
+    id: "ring",
+    name: "Ring",
+    laps: 1,
+    width: 120,
+    centerLine: Array.from({ length: 720 }, (_, i) => ({
+      x: R * Math.cos((i / 720) * Math.PI * 2),
+      y: R * Math.sin((i / 720) * Math.PI * 2),
+    })),
+  };
+  const limit = ring.width / 2 - (Math.max(CAR_LENGTH, CAR_WIDTH) / 2) * 0.7;
+
+  /** Speed after a car at the wall, heading `heading`, moves at `v`. */
+  function speedAfterHit(heading: number, vx: number, vy: number): number {
+    const track = buildTrack(ring);
+    const { car, walls } = createCarWorld(track);
+    car.position.x = R + limit - 0.2;
+    car.position.y = 0;
+    car.angle = heading;
+    car.velocity.x = vx;
+    car.velocity.y = vy;
+    for (let i = 0; i < 12; i++)
+      stepCar(car, walls, track, idle, defaultCarStats, dt);
+    return Math.hypot(car.velocity.x, car.velocity.y);
+  }
+
+  it("a graze keeps most of the car's speed", () => {
+    const a = (5 * Math.PI) / 180; // 5° into the wall at 180 px/s
+    const v = speedAfterHit(Math.PI / 2, 180 * Math.sin(a), 180 * Math.cos(a));
+    expect(v).toBeGreaterThan(180 * 0.85); // was ~45% under the old flat scrub
+  });
+
+  it("a head-on hit still stops the car, with a small bounce", () => {
+    const v = speedAfterHit(0, 180, 0);
+    expect(v).toBeLessThan(180 * 0.4);
   });
 });
 

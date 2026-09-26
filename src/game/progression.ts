@@ -167,6 +167,7 @@ export class Progression {
       };
     let creditsEarned = 0;
     if (result.finished) creditsEarned = computeReward(input);
+    const creditsBefore = this.data.credits;
     this.data.credits += creditsEarned;
 
     if (beat) {
@@ -183,15 +184,20 @@ export class Progression {
       newRecord: beat,
       oldBest,
       newBest,
-      unlockedCar: this.detectUnlock(),
+      unlockedCar: this.detectUnlock(creditsBefore),
        };
     }
 
-     /** A car class whose cost we can now afford but haven't unlocked yet. */
-  private detectUnlock(): string | null {
+     /**
+      * An unowned car whose price this race's earnings just reached, i.e.
+      * affordable now but not before, so it is announced once rather than
+      * after every race.
+      */
+  private detectUnlock(creditsBefore: number): string | null {
     for (const c of carClasses) {
       if (
         this.data.ownedCars.includes(c.id) === false &&
+        creditsBefore < c.cost &&
         this.data.credits >= c.cost
        ) {
         return c.id;

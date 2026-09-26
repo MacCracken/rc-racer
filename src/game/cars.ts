@@ -1,4 +1,5 @@
 import type { CarStats } from "../core/tuning.ts";
+import type { CarLook } from "../core/theme.ts";
 
 /**
  * A car class is a _stat vector_: the numbers that feed the physics. This is the
@@ -15,6 +16,8 @@ export interface CarClass {
   base: CarStats;
   /** Credits to unlock (0 = owned from the start / free). */
   cost: number;
+  /** Body style the renderer draws this class with. */
+  look: CarLook;
 }
 
 export const carClasses: CarClass[] = [
@@ -31,9 +34,10 @@ export const carClasses: CarClass[] = [
       drag: 0.35,
       turnRate: 3.2,
       grip: 0.18,
-      handbrakeGrip: 0.03,
+      handbrakeGrip: 0.024,
     },
     cost: 0,
+    look: "sedan",
   },
   {
     id: "buggy",
@@ -48,9 +52,10 @@ export const carClasses: CarClass[] = [
       drag: 0.42,
       turnRate: 4.6,
       grip: 0.12,
-      handbrakeGrip: 0.02,
+      handbrakeGrip: 0.016,
     },
     cost: 500,
+    look: "buggy",
   },
   {
     id: "brawler",
@@ -66,9 +71,10 @@ export const carClasses: CarClass[] = [
       drag: 0.4,
       turnRate: 3.5,
       grip: 0.24,
-      handbrakeGrip: 0.04,
+      handbrakeGrip: 0.032,
     },
     cost: 1200,
+    look: "brawler",
   },
 ];
 
