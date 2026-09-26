@@ -48,6 +48,7 @@ interface GameInternals {
   renderScene(): void;
   pause(): void;
   chaseGhost(): Ghost;
+  presentAudio(): void;
 }
 
 /**
@@ -526,5 +527,78 @@ describe("Game — chasing your best lap", () => {
     autopilot(g);
     while (g.playerRace.lap < 1) g.onStep(FIXED_DT);
     expect(g.chaseGhost()).toBe(g.playerRace.bestGhost);
+  });
+});
+
+describe("Game — engine and tyre audio", () => {
+  it("idles on the grid, revs with throttle, and goes quiet off the track", () => {
+    const { g, audio } = makeGame(0, Progression.fresh(), {
+      countdownMs: 3000,
+    });
+    g.presentAudio();
+    expect(audio.engine).toBeNull(); // menu
+
+    g.startRace();
+    drive(g, neutralInput);
+    run(g, 0.5);
+    g.presentAudio();
+    expect(audio.engine?.rpm).toBe(0); // idling at the lights
+    drive(g, floorIt());
+    run(g, 0.5);
+    g.presentAudio();
+    expect(audio.engine?.rpm).toBe(0.5); // revving on the grid
+
+    run(g, 2.5); // GO…
+    autopilot(g); // …and away, on the racing line (not into the wall)
+    run(g, 2.5);
+    g.presentAudio();
+    expect(audio.engine!.rpm).toBeGreaterThan(0.5);
+
+    g.pause(); // silenced at once, not on the next frame
+    expect(audio.engine).toBeNull();
+    expect(audio.skid).toBe(0);
+  });
+
+  it("is silent after the finish", () => {
+    const { g, audio } = makeGame();
+    g.startRace();
+    autopilot(g);
+    runToFinish(g);
+    g.presentAudio();
+    expect(audio.engine).toBeNull();
+  });
+
+  it("gives each class its own voice: the buggy whines above the brawler", () => {
+    const pitchOf = (car: string): number => {
+      const prog = Progression.fresh();
+      prog.setCredits(1e6);
+      prog.unlockCar(car);
+      const { g, audio } = makeGame(0, prog);
+      g.startRace();
+      g.presentAudio();
+      return audio.engine!.pitch;
+    };
+    expect(pitchOf("buggy")).toBeGreaterThan(1);
+    expect(pitchOf("brawler")).toBeLessThan(1);
+  });
+
+  it("squeals through a handbrake slide", () => {
+    const { g, audio } = makeGame();
+    g.startRace();
+    drive(g, floorIt());
+    run(g, 1.2);
+    drive(g, () => ({
+      ...neutralInput(),
+      throttle: 1,
+      steer: 1,
+      handbrake: true,
+    }));
+    let loudest = 0;
+    for (let i = 0; i < 0.6 / FIXED_DT; i++) {
+      g.onStep(FIXED_DT);
+      g.presentAudio();
+      loudest = Math.max(loudest, audio.skid);
+    }
+    expect(loudest).toBeGreaterThan(0.2);
   });
 });

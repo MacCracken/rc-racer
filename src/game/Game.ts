@@ -40,10 +40,11 @@ import {
 import { browserStorage, LocalSaveStore, MemorySaveStore } from "./save.ts";
 import type { ISaveStore } from "./save.ts";
 import type { IRenderer, RenderScene } from "../core/types.ts";
-import { createAudio, type IAudio } from "../core/Audio.ts";
+import { createAudio, engineFor, type IAudio } from "../core/Audio.ts";
 import {
   createSkid,
   sampleDrift,
+  slipAmount,
   ageMarks,
   type SkidState,
 } from "../core/SkidMarks.ts";
@@ -302,6 +303,7 @@ export class Game {
       this.fpsFrames = 0;
     }
     this.renderScene();
+    this.presentAudio();
     this.frameHandle = requestAnimationFrame((t) => this.frame(t));
   }
 
@@ -347,6 +349,11 @@ export class Game {
     this.trackDefs[0];
 
   private currentStats = () => this.prog.resolveStats(this.prog.selectedCarId);
+
+  /** Engine pitch of the selected car class (1 = the sedan's). */
+  private enginePitch = (): number =>
+    this.carClasses.find((c) => c.id === this.prog.selectedCarId)
+      ?.enginePitch ?? 1;
 
   /** Body style of the selected car (rivals race the same class). */
   private carLook = (): CarLook =>
@@ -455,6 +462,9 @@ export class Game {
   private pause(): void {
     if (this.screen !== "race" || this.finished || this.paused) return;
     this.paused = true;
+    // Now, not next frame: a hidden tab gets no frames, and the engine
+    // would drone on in the background.
+    this.presentAudio();
     this.showRaceOverlay();
   }
 
@@ -657,6 +667,29 @@ export class Game {
       ...this.chaseView(),
     };
     this.renderer.render(scene);
+  }
+
+  /**
+   * The continuous voices, once per frame: the player's engine while a race
+   * is live (on the grid too — rev it at the lights) and tyre squeal while
+   * sliding. Silent on the menus, while paused and after the finish.
+   */
+  private presentAudio(): void {
+    if (this.screen !== "race" || this.paused || this.finished) {
+      this.audio.setEngine?.(null);
+      this.audio.setSkid?.(0);
+      return;
+    }
+    const p = this.arena.cars[0]!;
+    const top = Math.max(1, p.stats.maxSpeed);
+    this.audio.setEngine?.(
+      engineFor(
+        Math.abs(forwardSpeed(p.body)) / top,
+        this.lastInput.throttle,
+        this.enginePitch(),
+      ),
+    );
+    this.audio.setSkid?.(slipAmount(p.body, { maxSpeed: top }));
   }
 
   /**

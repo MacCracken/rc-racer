@@ -7,6 +7,7 @@ import {
   MAX_MARKS,
   SKID_LIFETIME,
   type BodyLike,
+  slipAmount,
 } from "../src/core/SkidMarks.ts";
 
 /** A tiny kinematics-only stand-in for a Matter body. */
@@ -132,5 +133,41 @@ describe("SkidMarks buffer cap", () => {
     expect(visibleCount(s)).toBeLessThanOrEqual(MAX_MARKS);
     // And it keeps the most recent marks (front of the trail).
     expect(s.marks[0]!.alpha).toBe(1);
+  });
+});
+
+describe("slipAmount — how hard the tyres squeal", () => {
+  const body = (vx: number, vy: number, angle = 0) => ({
+    position: { x: 0, y: 0 },
+    angle,
+    velocity: { x: vx, y: vy },
+  });
+  const opts = { maxSpeed: 200 };
+
+  it("is silent while gripping or crawling", () => {
+    expect(slipAmount(body(180, 0), opts)).toBe(0); // straight line
+    expect(slipAmount(body(10, 8), opts)).toBe(0); // too slow to squeal
+  });
+
+  it("rises with the slide, and never exceeds 1", () => {
+    const light = slipAmount(body(150, 40), opts);
+    const hard = slipAmount(body(150, 110), opts);
+    expect(light).toBeGreaterThan(0);
+    expect(hard).toBeGreaterThan(light);
+    expect(slipAmount(body(200, 400), opts)).toBeLessThanOrEqual(1);
+  });
+
+  it("squeals exactly when skid marks are laid, so sound matches the tarmac", () => {
+    for (const [vx, vy] of [
+      [180, 0],
+      [150, 40],
+      [40, 30],
+      [20, 5],
+      [120, 18],
+    ]) {
+      const s = createSkid();
+      const laid = sampleDrift(s, body(vx, vy), opts);
+      expect(laid > 0, `${vx},${vy}`).toBe(slipAmount(body(vx, vy), opts) > 0);
+    }
   });
 });

@@ -106,13 +106,7 @@ export function sampleDrift(
   const lx = -fy;
   const ly = fx;
 
-  const forward = body.velocity.x * fx + body.velocity.y * fy;
-  const lateral = body.velocity.x * lx + body.velocity.y * ly;
-  const speedFrac = Math.abs(forward) / Math.max(1, o.maxSpeed);
-
-  if (speedFrac < o.minSpeedFrac) return 0;
-  const slip = Math.abs(lateral) / Math.max(1, Math.abs(forward));
-  if (slip < o.slipRatio) return 0;
+  if (slipAmount(body, o) === 0) return 0;
 
   // Rear-axle centre, reusing each mark, split by the car width.
   const rx = body.position.x - fx * (o.carLength / 2);
@@ -134,6 +128,26 @@ export function sampleDrift(
     for (const m of evicted) recycle(state, m);
   }
   return 2;
+}
+
+/**
+ * How hard the tyres are sliding, 0..1: zero whenever `sampleDrift` would lay
+ * no marks (too slow, or not sliding), rising with the slip angle and the
+ * speed. Drives the tyre squeal, so what you hear matches what you see.
+ */
+export function slipAmount(body: BodyLike, opts?: Partial<DriftOpts>): number {
+  const o = { ...DEFAULTS, ...opts };
+  const fx = Math.cos(body.angle);
+  const fy = Math.sin(body.angle);
+  const forward = body.velocity.x * fx + body.velocity.y * fy;
+  const lateral = -body.velocity.x * fy + body.velocity.y * fx;
+  const speedFrac = Math.abs(forward) / Math.max(1, o.maxSpeed);
+  if (speedFrac < o.minSpeedFrac) return 0;
+  const slip = Math.abs(lateral) / Math.max(1, Math.abs(forward));
+  if (slip < o.slipRatio) return 0;
+  const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
+  // Always audible past the threshold; full voice by ~0.5 slip at half speed.
+  return clamp01(0.25 + (slip - o.slipRatio) / 0.4) * clamp01(0.4 + speedFrac);
 }
 
 /** Age the trail: fade alpha, then route fully-faded marks back to the pool. */
