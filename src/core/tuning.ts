@@ -18,6 +18,11 @@ export const CAMERA_ZOOM_RATE = 2; // 1/s exponential smoothing
 /** Wide shot for the menus' live backdrop. */
 export const CAMERA_ZOOM_MENU = 0.55;
 
+// Race start: a 3-2-1 countdown holds the whole field on the grid, then GO.
+export const START_COUNTDOWN_MS = 3000;
+/** How long the "GO!" flash stays up once the lights go green. */
+export const GO_FLASH_MS = 800;
+
 // Gate tunnel prevention
 export const GATE_SUBSTEPS = 4; // sub-steps per fixed dt for gate checks
 export const GATE_TOLERANCE = 6; // px tolerance for gate crossing

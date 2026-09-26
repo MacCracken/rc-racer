@@ -62,9 +62,9 @@ describe("rebinding", () => {
     expect(s.keyMap.steerLeft).toEqual(["KeyA", "ArrowLeft"]);
   });
 
-  it("refuses the game's own keys (R restarts, Q / Esc / Backspace quit)", () => {
+  it("refuses the game's own keys (R restarts, P / Esc pause, Q / Backspace quit)", () => {
     const s = defaultSettings();
-    for (const code of ["KeyR", "KeyQ", "Escape", "Backspace"]) {
+    for (const code of ["KeyR", "KeyP", "KeyQ", "Escape", "Backspace"]) {
       expect(isReservedCode(code)).toBe(true);
       expect(rebindSetting(s, "handbrake", code)).toBe(s); // unchanged
     }

@@ -9,6 +9,7 @@ import {
   CAMERA_ZOOM_SLOW,
   CAR_LENGTH,
   CAR_WIDTH,
+  GO_FLASH_MS,
   KMH_PER_PX_S,
 } from "./tuning.ts";
 import { formatLap, currentLapTimeMs } from "../race/RaceState.ts";
@@ -111,6 +112,7 @@ export class Canvas2DRenderer implements IRenderer {
       rivalLook = look,
       controls = IDLE,
       rivalControls = [],
+      startClockMs,
     } = scene;
     const w = this.canvas.width / this.dpr;
     const h = this.canvas.height / this.dpr;
@@ -149,6 +151,7 @@ export class Canvas2DRenderer implements IRenderer {
     if (confettiAgeMs !== undefined && confettiAgeMs >= 0) {
       this.drawConfetti(this.ctx, w, h, confettiAgeMs);
     }
+    if (startClockMs !== undefined) this.drawStartLights(w, h, startClockMs);
   }
 
   // --- world-space rendering ---
@@ -587,6 +590,63 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.lineWidth = 1;
     for (const r of rivals ?? []) dot(r, pal.rival, 2.5);
     dot(car, pal.player, 3.5);
+  }
+
+  /**
+   * Start lights over the grid: three red lamps light one per second of the
+   * countdown under a big numeral, then all go green with a "GO!" that fades.
+   * `t` is ms relative to GO (negative while counting down).
+   */
+  private drawStartLights(w: number, h: number, t: number): void {
+    if (t >= GO_FLASH_MS) return;
+    const { ctx } = this;
+    const s = this.hudScale;
+    const go = t >= 0;
+    const n = go ? 0 : Math.ceil(-t / 1000); // 3, 2, 1
+    // 0..1 through the current second (or through the GO flash).
+    const e = go ? t / GO_FLASH_MS : (n * 1000 + t) / 1000;
+    const lit = go ? 3 : 4 - n;
+    const cx = w / 2;
+    const cy = h * 0.28;
+    const r = 13 * s;
+    const gap = 38 * s;
+    ctx.save();
+    ctx.globalAlpha = go ? Math.min(1, (GO_FLASH_MS - t) / 300) : 1;
+
+    ctx.fillStyle = "rgba(10,12,14,0.85)";
+    ctx.beginPath();
+    const pw = gap * 2 + r * 2 + 20 * s;
+    const ph = r * 2 + 16 * s;
+    if (typeof ctx.roundRect === "function")
+      ctx.roundRect(cx - pw / 2, cy - ph / 2, pw, ph, 10 * s);
+    else ctx.rect(cx - pw / 2, cy - ph / 2, pw, ph);
+    ctx.fill();
+    for (let i = 0; i < 3; i++) {
+      const on = i < lit;
+      const color = go ? "#3dff7a" : on ? "#ff3b30" : "#3a1512";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = on ? 18 * s : 0;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(cx + (i - 1) * gap, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // The numeral bursts in big and settles each second.
+    const text = go ? "GO!" : String(n);
+    const size = 72 * s * (1 + 0.5 * Math.pow(1 - e, 3));
+    const ty = cy + ph / 2 + 52 * s;
+    ctx.font = `800 ${size}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 8 * s;
+    ctx.strokeStyle = "rgba(0,0,0,0.65)";
+    ctx.strokeText(text, cx, ty);
+    ctx.fillStyle = go ? "#7dff9b" : "#ffe9a8";
+    ctx.fillText(text, cx, ty);
+    ctx.restore();
   }
 
   private drawConfetti(

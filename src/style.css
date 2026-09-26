@@ -534,6 +534,35 @@ button {
   pointer-events: auto;
 }
 
+/* PAUSE ------------------------------------------------------------------ */
+/* A small card over the frozen race; the canvas keeps drawing behind it. */
+.screen-pause {
+  width: min(380px, 92vw);
+}
+
+.pause-panel {
+  text-align: center;
+}
+
+.pause-title {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #ffe9a8;
+  margin: 4px 0 16px;
+}
+
+.pause-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pause-actions button {
+  margin-top: 0;
+  width: 100%;
+}
+
 /* SETTINGS --------------------------------------------------------------- */
 .screen-settings {
   background: rgba(8, 14, 11, 0.86);

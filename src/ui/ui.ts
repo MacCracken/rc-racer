@@ -116,7 +116,7 @@ export function controlsHint(km: KeyMap): string {
     ? "WASD / arrows to drive"
     : `${keys("throttle")} gas · ${keys("brake")} brake · ` +
       `${keys("steerLeft")} left · ${keys("steerRight")} right`;
-  return `${drive} · ${keys("handbrake")} handbrake · R restart · Esc or Q to menu`;
+  return `${drive} · ${keys("handbrake")} handbrake · R restart · Esc pause · Q menu`;
 }
 
 const HUD_SIZE_LABEL: Record<HudSize, string> = {
@@ -319,10 +319,31 @@ export function raceOverlay(km: KeyMap, muted: boolean): string {
      <div class="screen screen-race-overlay">
        <div class="race-controls">
          <button class="ghost" data-action="quit">◀ Menu</button>
+         <button class="ghost" data-action="pause" aria-label="Pause">⏸ Pause</button>
          ${soundButton(muted)}
        </div>
        <div class="hint race-hint">${esc(controlsHint(km))}</div>
      </div>`;
+}
+
+/**
+ * The pause menu. The race behind it is frozen (clock, cars, countdown) until
+ * it is resumed; restarting or quitting from here drops it.
+ */
+export function pauseHtml(muted: boolean): string {
+  return `
+    <div class="screen screen-pause">
+      <div class="panel pause-panel">
+        <div class="pause-title">Paused</div>
+        <div class="pause-actions">
+          <button class="primary" data-action="resume">▶ Resume</button>
+          <button class="ghost" data-action="restart">↻ Restart race</button>
+          <button class="ghost" data-action="quit">◀ Quit to menu</button>
+          ${soundButton(muted)}
+        </div>
+        <div class="hint">Esc or P resume · R restart · Q menu</div>
+      </div>
+    </div>`;
 }
 
 /**

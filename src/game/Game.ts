@@ -57,12 +57,14 @@ import {
   CAMERA_ZOOM_MENU,
   CAMERA_ZOOM_RATE,
   CAMERA_ZOOM_SLOW,
+  START_COUNTDOWN_MS,
 } from "../core/tuning.ts";
 import {
   menuHtml,
   garageHtml,
   resultsHtml,
   raceOverlay,
+  pauseHtml,
   onboardingHtml,
   settingsHtml,
   formatPar,
@@ -112,6 +114,8 @@ export interface GameDeps {
   audio?: IAudio;
   carClasses?: CarClass[];
   tracks?: TrackDef[];
+  /** Start countdown length (ms); 0 skips it. Defaults to START_COUNTDOWN_MS. */
+  countdownMs?: number;
 }
 
 export class Game {
@@ -122,6 +126,8 @@ export class Game {
   private readonly rivals: number;
   private readonly carClasses: CarClass[];
   private readonly trackDefs: TrackDef[];
+  /** Length of the start countdown (ms); 0 = none. */
+  private readonly countdownTotalMs: number;
 
   private camera: Camera;
   private input: IInput;
@@ -140,12 +146,18 @@ export class Game {
   private playerRace: RaceState;
   private racers: Racer[] = [];
   private finished = false;
+  /** ms left before the lights go green; 0 once the race is running. */
+  private countdownMs = 0;
+  /** A race frozen by the player (Esc / P) or by the window losing focus. */
+  private paused = false;
   private lastResults: ResultsView | null = null;
   public screen: Screen = "menu";
 
   private onClickBound: (e: Event) => void;
   private onKeyDownBound: (e: KeyboardEvent) => void;
   private onResizeBound: () => void;
+  private onFocusLostBound: () => void;
+  private onVisibilityBound: () => void;
   private skid: SkidState;
   private audio: IAudio;
   private prevLap = 0;
@@ -171,6 +183,7 @@ export class Game {
     this.rivals = deps.rivals ?? 3;
     this.carClasses = deps.carClasses ?? DEFAULT_CARS;
     this.trackDefs = deps.tracks ?? DEFAULT_TRACKS;
+    this.countdownTotalMs = Math.max(0, deps.countdownMs ?? START_COUNTDOWN_MS);
     this.store =
       deps.store ??
       (browserStorage() !== null
@@ -186,6 +199,12 @@ export class Game {
     this.onKeyDownBound = (e: KeyboardEvent) => this.onKeyDown(e);
     this.onResizeBound = () => this.onResize();
     this.onRebindKeyBound = (e: KeyboardEvent) => this.onRebindKey(e);
+    // Alt-tab, a click into devtools or a hidden tab freezes a race rather
+    // than letting it run on with every key released.
+    this.onFocusLostBound = () => this.pause();
+    this.onVisibilityBound = () => {
+      if (document.hidden) this.pause();
+    };
 
     this.skid = createSkid();
     this.audio = deps.audio ?? createAudio();
@@ -216,6 +235,8 @@ export class Game {
     document.addEventListener("keydown", this.onRebindKeyBound, true);
     window.addEventListener("resize", this.onResizeBound);
     window.addEventListener("keydown", this.onKeyDownBound);
+    window.addEventListener("blur", this.onFocusLostBound);
+    document.addEventListener("visibilitychange", this.onVisibilityBound);
     this.showMenu();
     this.lastFrameMs = performance.now();
     this.frameHandle = requestAnimationFrame((t) => this.frame(t));
@@ -226,18 +247,31 @@ export class Game {
     document.removeEventListener("keydown", this.onRebindKeyBound, true);
     window.removeEventListener("resize", this.onResizeBound);
     window.removeEventListener("keydown", this.onKeyDownBound);
+    window.removeEventListener("blur", this.onFocusLostBound);
+    document.removeEventListener("visibilitychange", this.onVisibilityBound);
     this.uiRoot.removeEventListener("click", this.onClickBound);
     if (this.frameHandle !== null) cancelAnimationFrame(this.frameHandle);
     this.frameHandle = null;
   }
 
-  /** Global shortcuts: R restarts a race; Esc / Q / Backspace go to the menu. */
+  /**
+   * Global shortcuts. In a race R restarts and Esc / P pause (and resume);
+   * Q / Backspace — or Esc on any other screen — go back to the menu.
+   */
   private onKeyDown(e: KeyboardEvent): void {
     // Leave browser/OS chords (⌘R reload, Ctrl+Q…) to the browser.
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.code === "KeyR" && this.screen === "race") {
       // Holding R auto-repeats keydown; restart once per press.
       if (!e.repeat) this.startRace();
+      return;
+    }
+    if ((e.code === "Escape" || e.code === "KeyP") && this.screen === "race") {
+      if (!e.repeat) {
+        this.audio.play("click");
+        if (this.paused) this.resume();
+        else this.pause();
+      }
       return;
     }
     const quitting =
@@ -338,6 +372,8 @@ export class Game {
    */
   private resetPreview(): void {
     this.finished = false;
+    this.paused = false;
+    this.countdownMs = 0;
     this.clockMs = 0;
     this.confettiStartFrameMs = null;
     this.arena = createArena(
@@ -353,15 +389,21 @@ export class Game {
     this.lastResults = null;
   }
 
-  private startRace(): void {
-    // Release focus from the button we just clicked so keyboard goes
-    // straight to driving instead of re-activating a focused control
-    // (e.g. Space otherwise double-fires the Start button).
+  /**
+   * Release focus from the button just clicked so the keyboard goes straight
+   * to driving instead of re-activating a focused control (e.g. Space would
+   * otherwise double-fire the Start or Resume button).
+   */
+  private releaseFocus(): void {
     if (
       typeof document !== "undefined" &&
       document.activeElement instanceof HTMLElement
     )
       document.activeElement.blur();
+  }
+
+  private startRace(): void {
+    this.releaseFocus();
     // Reset the race clock *before* building any RaceState: each stamps its
     // lap start from this clock, so a stale one (Race again, R restart) made
     // the first lap time negative and saved it as an unbeatable record.
@@ -389,25 +431,51 @@ export class Game {
       });
     }
     this.finished = false;
+    this.paused = false;
     this.lastResults = null;
     this.skid = createSkid();
     this.lastInput = neutralInput();
     this.prevLap = 0;
+    // The field waits on the grid for the lights; the first beep is "3".
+    this.countdownMs = this.countdownTotalMs;
+    if (this.countdownMs > 0) this.audio.play("count");
     this.screen = "race";
-    this.uiRoot.innerHTML = raceOverlay(
-      this.settings.keyMap,
-      this.settings.muted,
-    );
+    this.showRaceOverlay();
     const p = this.arena.cars[0]!;
     this.camera.view = { x: p.body.position.x, y: p.body.position.y };
     this.camera.zoom = CAMERA_ZOOM_SLOW; // parked on the grid: close in
+  }
+
+  /** Freeze a race in progress (Esc / P, the Pause button, or lost focus). */
+  private pause(): void {
+    if (this.screen !== "race" || this.finished || this.paused) return;
+    this.paused = true;
+    this.showRaceOverlay();
+  }
+
+  private resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    this.releaseFocus();
+    this.showRaceOverlay();
+  }
+
+  /** The race's DOM layer: the pause menu while paused, else the thin overlay. */
+  private showRaceOverlay(): void {
+    this.uiRoot.innerHTML = this.paused
+      ? pauseHtml(this.settings.muted)
+      : raceOverlay(this.settings.keyMap, this.settings.muted);
   }
 
   // --- simulation ------------------------------------------------------
 
   /** Fixed-timestep tick; `dt` is in seconds. */
   private onStep(dt: number): void {
-    if (this.screen !== "race" || this.finished) return;
+    if (this.screen !== "race" || this.finished || this.paused) return;
+    if (this.countdownMs > 0) {
+      this.stepCountdown(dt);
+      return;
+    }
     this.clockMs += dt * 1000;
 
     // Player.
@@ -451,6 +519,23 @@ export class Game {
       this.prevLap = this.playerRace.lap;
     }
     if (this.playerRace.finished) this.finalizeRace();
+  }
+
+  /**
+   * The start countdown. Every car is held on the grid and the race clock
+   * waits, so nobody — rival or player — gets a jump on the field; the player
+   * can still turn the wheels and blip the brakes. A beep marks each second,
+   * a higher one the green light.
+   */
+  private stepCountdown(dt: number): void {
+    this.lastInput = this.input.sample();
+    const shown = Math.ceil(this.countdownMs / 1000);
+    this.countdownMs -= dt * 1000;
+    // Snap float residue from the repeated subtraction, so GO lands on time.
+    if (this.countdownMs < 1e-6) this.countdownMs = 0;
+    if (this.countdownMs === 0) this.audio.play("go");
+    else if (Math.ceil(this.countdownMs / 1000) < shown)
+      this.audio.play("count");
   }
 
   private stepBody(c: ArenaCar, input: InputState, dtS: number): void {
@@ -561,8 +646,19 @@ export class Game {
       // The race HUD belongs to a race (and its results); on the menus it
       // just peeks out around the panels.
       hud: this.screen === "race" || this.screen === "results",
+      startClockMs: this.startClock(),
     };
     this.renderer.render(scene);
+  }
+
+  /**
+   * Time relative to the start signal, for the start lights: negative while
+   * counting down, then the race clock after GO. Undefined off a race (or
+   * with the countdown disabled), so no lights are drawn.
+   */
+  private startClock(): number | undefined {
+    if (this.screen !== "race" || this.countdownTotalMs === 0) return undefined;
+    return this.countdownMs > 0 ? -this.countdownMs : this.clockMs;
   }
 
   // --- UI plumbing -----------------------------------------------------
@@ -577,10 +673,13 @@ export class Game {
     this.audio.play("click");
 
     const action = el.getAttribute("data-action");
-    if (action === "start" || action === "raceagain") this.startRace();
+    if (action === "start" || action === "raceagain" || action === "restart")
+      this.startRace();
     else if (action === "garage") this.showGarage();
     else if (action === "menu") this.showMenu();
     else if (action === "quit") this.backToMenu();
+    else if (action === "pause") this.pause();
+    else if (action === "resume") this.resume();
     else if (action === "howto") this.showOnboarding();
     else if (action === "close-onboarding") this.showMenu();
     else if (action === "settings") this.showSettings();
@@ -604,11 +703,7 @@ export class Game {
       this.commitSettings({ ...this.settings, muted: !this.settings.muted });
       // Mid-race the overlay's button shows the state; redraw it (which
       // also drops its focus, so Space/Enter can't re-toggle it).
-      if (this.screen === "race")
-        this.uiRoot.innerHTML = raceOverlay(
-          this.settings.keyMap,
-          this.settings.muted,
-        );
+      if (this.screen === "race") this.showRaceOverlay();
     }
 
     // Selections and purchases are saved as they happen, not at the next
@@ -770,7 +865,8 @@ export class Game {
       return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    // R / Q / Backspace already restart or quit; keep capturing and say why.
+    // R / P / Q / Backspace already restart, pause or quit; keep capturing
+    // and say why.
     if (isReservedCode(e.code)) {
       this.rebindNotice = `${keyLabel(e.code)} is reserved — press another key`;
       this.showSettings();

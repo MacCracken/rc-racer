@@ -31,6 +31,7 @@ import { freshUpgrades, SLOTS } from "../../src/game/upgrades.ts";
 interface GameInternals {
   screen: string;
   clockMs: number;
+  paused: boolean;
   camera: Camera;
   input: IInput;
   arena: Arena;
@@ -43,9 +44,18 @@ interface GameInternals {
   onRebindKey(e: Partial<KeyboardEvent>): void;
   playerPosition(): number;
   renderScene(): void;
+  pause(): void;
 }
 
-function makeGame(credits = 0, prog = Progression.fresh()) {
+/**
+ * A headless Game. The start countdown is off by default so a test's first
+ * step is already racing; countdown tests turn it back on.
+ */
+function makeGame(
+  credits = 0,
+  prog = Progression.fresh(),
+  opts: { countdownMs?: number } = {},
+) {
   const store = new MemorySaveStore();
   const audio = new NullAudio();
   prog.setCredits(credits);
@@ -59,9 +69,33 @@ function makeGame(credits = 0, prog = Progression.fresh()) {
     addEventListener() {},
     removeEventListener() {},
   } as unknown as HTMLElement;
-  const game = new Game(prog, { renderer, uiRoot, store, audio, rivals: 3 });
+  const game = new Game(prog, {
+    renderer,
+    uiRoot,
+    store,
+    audio,
+    rivals: 3,
+    countdownMs: opts.countdownMs ?? 0,
+  });
   const lastScene = (): RenderScene | undefined => scenes[scenes.length - 1];
-  return { g: game as unknown as GameInternals, prog, store, audio, lastScene };
+  return {
+    g: game as unknown as GameInternals,
+    prog,
+    store,
+    audio,
+    uiRoot,
+    lastScene,
+  };
+}
+
+/** Hold the throttle (and optionally a steer) — a stand-in for the keyboard. */
+const floorIt =
+  (steer = 0) =>
+  (): InputState => ({ ...neutralInput(), throttle: 1, steer });
+
+/** Step the sim for `seconds` of game time. */
+function run(g: GameInternals, seconds: number): void {
+  for (let i = 0; i < Math.round(seconds / FIXED_DT); i++) g.onStep(FIXED_DT);
 }
 
 /** Swap the keyboard for a scripted input. */
@@ -288,5 +322,153 @@ describe("Game — render scene", () => {
     g.startRace();
     g.renderScene();
     expect(lastScene()?.hud).toBe(true);
+  });
+});
+
+describe("Game — start countdown", () => {
+  it("holds the whole field on the grid until GO, beeping 3-2-1 then GO", () => {
+    const { g, audio } = makeGame(0, Progression.fresh(), {
+      countdownMs: 3000,
+    });
+    g.startRace();
+    drive(g, floorIt());
+    const grid = g.arena.cars.map((c) => ({ ...c.body.position }));
+    run(g, 2.9);
+    // Throttle held, yet nobody has moved and the race clock hasn't started.
+    expect(g.clockMs).toBe(0);
+    g.arena.cars.forEach((c, i) => expect(c.body.position).toEqual(grid[i]));
+    run(g, 0.5);
+    expect(g.clockMs).toBeGreaterThan(0);
+    g.arena.cars.forEach((c, i) =>
+      expect(c.body.position, `car ${i} left the grid`).not.toEqual(grid[i]),
+    );
+    const beeps = audio.log
+      .map((e) => e.ev)
+      .filter((ev) => ev === "count" || ev === "go");
+    expect(beeps).toEqual(["count", "count", "count", "go"]);
+  });
+
+  it("shows the player's wheels turning on the grid without moving the car", () => {
+    const { g, lastScene } = makeGame(0, Progression.fresh(), {
+      countdownMs: 3000,
+    });
+    g.startRace();
+    drive(g, floorIt(1));
+    const heading = g.arena.cars[0].body.angle;
+    run(g, 1);
+    g.renderScene();
+    expect(lastScene()?.controls?.steer).toBe(1);
+    expect(g.arena.cars[0].body.angle).toBe(heading);
+  });
+
+  it("feeds the start lights T-minus, then time since GO — only in a race", () => {
+    const { g, lastScene } = makeGame(0, Progression.fresh(), {
+      countdownMs: 3000,
+    });
+    g.renderScene();
+    expect(lastScene()?.startClockMs).toBeUndefined(); // menu
+    g.startRace();
+    drive(g, neutralInput);
+    run(g, 1);
+    g.renderScene();
+    expect(lastScene()?.startClockMs).toBeCloseTo(-2000, 6);
+    run(g, 2.5);
+    g.renderScene();
+    expect(lastScene()?.startClockMs).toBeGreaterThan(0);
+  });
+
+  it("R restarts the countdown from the top", () => {
+    const { g, audio } = makeGame(0, Progression.fresh(), {
+      countdownMs: 3000,
+    });
+    g.startRace();
+    drive(g, neutralInput);
+    run(g, 5);
+    expect(g.clockMs).toBeGreaterThan(0);
+    audio.log.length = 0;
+    g.onKeyDown(keydown("KeyR"));
+    run(g, 2.9);
+    expect(g.clockMs).toBe(0);
+    expect(audio.log.filter((e) => e.ev === "count")).toHaveLength(3);
+  });
+});
+
+describe("Game — pause", () => {
+  it("Esc pauses a race: clock and cars freeze until Esc or P resumes", () => {
+    const { g, uiRoot } = makeGame();
+    g.startRace();
+    drive(g, floorIt());
+    run(g, 1);
+    g.onKeyDown(keydown("Escape"));
+    expect(g.paused).toBe(true);
+    expect(uiRoot.innerHTML).toContain('data-action="resume"');
+    const clock = g.clockMs;
+    const pos = { ...g.arena.cars[0].body.position };
+    run(g, 1);
+    expect(g.clockMs).toBe(clock);
+    expect(g.arena.cars[0].body.position).toEqual(pos);
+
+    g.onKeyDown(keydown("KeyP"));
+    expect(g.paused).toBe(false);
+    expect(uiRoot.innerHTML).toContain('data-action="pause"');
+    run(g, 0.5);
+    expect(g.clockMs).toBeGreaterThan(clock);
+    expect(g.arena.cars[0].body.position).not.toEqual(pos);
+  });
+
+  it("a held Esc pauses once instead of flickering on key auto-repeat", () => {
+    const { g } = makeGame();
+    g.startRace();
+    g.onKeyDown(keydown("Escape"));
+    g.onKeyDown(keydown("Escape", { repeat: true }));
+    expect(g.paused).toBe(true);
+  });
+
+  it("losing focus pauses a race, and only a race", () => {
+    const { g } = makeGame();
+    g.pause(); // what the blur / hidden-tab listeners call — on the menu
+    expect(g.paused).toBe(false);
+    g.startRace();
+    g.pause();
+    expect(g.paused).toBe(true);
+  });
+
+  it("freezes the countdown too, so the lights resume where they stopped", () => {
+    const { g, lastScene } = makeGame(0, Progression.fresh(), {
+      countdownMs: 3000,
+    });
+    g.startRace();
+    drive(g, neutralInput);
+    run(g, 1);
+    g.pause();
+    run(g, 5);
+    g.renderScene();
+    expect(lastScene()?.startClockMs).toBeCloseTo(-2000, 6);
+  });
+
+  it("the pause menu restarts the race; Q quits it outright", () => {
+    const { g } = makeGame();
+    g.startRace();
+    drive(g, floorIt());
+    run(g, 1);
+    g.pause();
+    click(g, { "data-action": "restart" });
+    expect(g.paused).toBe(false);
+    expect(g.screen).toBe("race");
+    expect(g.clockMs).toBe(0);
+
+    g.pause();
+    g.onKeyDown(keydown("KeyQ"));
+    expect(g.screen).toBe("menu");
+    expect(g.paused).toBe(false);
+  });
+
+  it("the sound toggle keeps the pause menu up", () => {
+    const { g, uiRoot } = makeGame();
+    g.startRace();
+    g.pause();
+    click(g, { "data-action": "toggle-sound" });
+    expect(g.paused).toBe(true);
+    expect(uiRoot.innerHTML).toContain('data-action="resume"');
   });
 });

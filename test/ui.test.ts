@@ -4,6 +4,7 @@ import {
   garageHtml,
   resultsHtml,
   raceOverlay,
+  pauseHtml,
   onboardingHtml,
   settingsHtml,
   controlsHint,
@@ -113,6 +114,16 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
     expect(html).toContain('data-action="quit"');
     // It should also advertise the Esc/Q shortcut.
     expect(html.toLowerCase()).toContain("esc");
+  });
+
+  it("the race overlay can pause; the pause menu resumes, restarts or quits", () => {
+    expect(raceOverlay(defaultKeyMap(), false)).toContain(
+      'data-action="pause"',
+    );
+    const html = pauseHtml(false);
+    for (const action of ["resume", "restart", "quit", "toggle-sound"])
+      expect(html).toContain(`data-action="${action}"`);
+    expect(controlsHint(defaultKeyMap())).toContain("Esc pause");
   });
 
   it("offers a mute toggle in Settings and mid-race, labelled with its state", () => {

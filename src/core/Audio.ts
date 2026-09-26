@@ -6,7 +6,16 @@
  * the one part that genuinely needs a browser.
  */
 
-export type SoundEvent = "lap" | "finish" | "click" | "boost" | "drift";
+export type SoundEvent =
+  | "lap"
+  | "finish"
+  | "click"
+  | "boost"
+  | "drift"
+  /** A start-countdown beep (3, 2, 1)… */
+  | "count"
+  /** …and the higher one as the lights go green. */
+  | "go";
 
 export interface IAudio {
   /** Fire a sound event (optionally scaled 0..1). */
@@ -63,6 +72,8 @@ export class WebAudio implements IAudio {
     click: 320,
     boost: 1100,
     drift: 180,
+    count: 523, // C5 ...
+    go: 1047, // ... and C6, an octave up, like real start lights
   };
 
   play(ev: SoundEvent, gain = 0.25): void {

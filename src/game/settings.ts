@@ -25,13 +25,14 @@ export interface Settings {
 }
 
 /**
- * Keys the game itself answers to (R restarts, Esc / Q / Backspace go back to
- * the menu). Binding a driving action to one would fire both, e.g. a handbrake
- * on Q that also quits the race, so these are never rebindable.
+ * Keys the game itself answers to (R restarts, Esc / P pause, Q / Backspace
+ * go back to the menu). Binding a driving action to one would fire both, e.g.
+ * a handbrake on Q that also quits the race, so these are never rebindable.
  */
 export const RESERVED_CODES: readonly string[] = [
   "KeyR",
   "KeyQ",
+  "KeyP",
   "Escape",
   "Backspace",
 ];
