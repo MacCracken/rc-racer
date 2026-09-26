@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   NullAudio,
   WebAudio,
@@ -88,5 +88,38 @@ describe("Engine voice — revs from the car's state", () => {
     expect(a.skid).toBe(0.4);
     a.setEngine(null);
     expect(a.engine).toBeNull();
+  });
+});
+
+describe("WebAudio — when the audio context gets created", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A fake browser: counts AudioContexts made (enough for these paths). */
+  function fakeBrowser() {
+    const made = { count: 0 };
+    class FakeCtx {
+      state = "running";
+      currentTime = 0;
+      constructor() {
+        made.count++;
+      }
+    }
+    vi.stubGlobal("window", { AudioContext: FakeCtx });
+    return made;
+  }
+
+  it("unmuting (a click) creates it, so a game that booted muted can play", () => {
+    const made = fakeBrowser();
+    const a = new WebAudio();
+    a.setMuted(true); // boot, muted: no context needed yet
+    expect(made.count).toBe(0);
+    a.setMuted(false); // the player's unmute click
+    expect(made.count).toBe(1);
+  });
+
+  it("booting unmuted doesn't create one outside a user gesture", () => {
+    const made = fakeBrowser();
+    new WebAudio().setMuted(false);
+    expect(made.count).toBe(0);
   });
 });

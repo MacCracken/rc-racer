@@ -74,6 +74,7 @@ function model(): UiModel {
 const BASE_OUTCOME = {
   creditsEarned: 50,
   breakdown: { base: 50, pace: 0, podium: 0 },
+  parMs: 4000,
   newRecord: false,
   oldBest: 4000,
   newBest: 4000,

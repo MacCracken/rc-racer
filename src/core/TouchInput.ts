@@ -78,6 +78,14 @@ export class TouchInput implements IInput {
     this.paint();
   }
 
+  /**
+   * Re-light held buttons, e.g. after the overlay holding them was rebuilt
+   * while a finger stayed down.
+   */
+  refresh(): void {
+    this.paint();
+  }
+
   /** Light up held buttons: a finger covers the one it's pressing. */
   private paint(): void {
     const held = new Set(this.fingers.values());

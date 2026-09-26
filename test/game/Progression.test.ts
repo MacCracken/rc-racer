@@ -255,3 +255,17 @@ describe("Progression — the podium pays", () => {
     expect(out.creditsEarned).toBe(0);
   });
 });
+
+describe("Progression — the outcome names the par it paid against", () => {
+  it("reports the track's par, or the fallback used for an unknown track", () => {
+    const p = Progression.fresh();
+    const race = {
+      carId: "street-sedan",
+      laps: 3,
+      bestLapMs: 20000,
+      finished: true,
+    };
+    expect(p.recordRace({ ...race, trackId: "overture" }).parMs).toBe(18000);
+    expect(p.recordRace({ ...race, trackId: "nowhere" }).parMs).toBe(4000);
+  });
+});

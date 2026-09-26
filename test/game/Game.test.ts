@@ -640,6 +640,14 @@ describe("Game — first launch", () => {
     expect(again.screen).toBe("menu");
   });
 
+  it("leaving How to Play by key (Esc) also counts as seen", () => {
+    const { g, store } = makeGame();
+    g.showOpeningScreen();
+    g.onKeyDown(keydown("Escape"));
+    expect(g.screen).toBe("menu");
+    expect(store.load()?.settings.onboarded).toBe(true);
+  });
+
   it("'Start Racing' from How to Play also counts as seen", () => {
     const { g, prog } = makeGame();
     g.showOpeningScreen();

@@ -151,12 +151,16 @@ export class WebAudio implements IAudio {
   }
 
   setMuted(muted: boolean): void {
+    const unmuting = this.muted && !muted;
     this.muted = muted;
     const L = this.loops;
     if (L !== null && this.ctx !== null)
       L.master.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.02);
-    // Unmuting is a click: a good moment to wake a suspended context.
-    if (!muted && this.ctx !== null) this.ensure();
+    // Unmuting is the player's click: the moment to create (or wake) the
+    // context, since browsers only start audio inside a user gesture. A game
+    // that booted muted has none yet, and the engine loop would otherwise
+    // create it later from a frame callback, where Safari keeps it silent.
+    if (unmuting) this.ensure();
   }
 
   setEngine(e: EngineSound | null): void {

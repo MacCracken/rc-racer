@@ -118,3 +118,17 @@ describe("Touch controls", () => {
     expect(input.sample().throttle).toBe(0);
   });
 });
+
+describe("Touch controls — a rebuilt overlay", () => {
+  it("refresh() re-lights the new buttons a finger is still holding", () => {
+    const { input, buttons, fire } = setup();
+    fire("pointerdown", 1, buttons.gas);
+    // The overlay is re-rendered (e.g. the mute toggle): fresh elements.
+    const fresh = button("gas");
+    buttons.gas = fresh;
+    expect(fresh.held()).toBe(false);
+    input.refresh();
+    expect(fresh.held()).toBe(true);
+    expect(input.sample().throttle).toBe(1); // the finger never let go
+  });
+});

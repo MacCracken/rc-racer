@@ -1,8 +1,10 @@
 /**
- * Credits from a finished race: a base payout for finishing, plus a *performance
- * bonus* that is larger the faster the best lap is versus the track's par time,
- * with diminishing returns (a perfect lap isn't worth 10x, and slower is worth
- * far less). Pure and monotonic: a faster best lap always earns more.
+ * The lap-time side of a race's credits: a base payout for finishing, plus a
+ * *performance bonus* that is larger the faster the best lap is versus the
+ * track's par time, with diminishing returns (a perfect lap isn't worth 10x,
+ * and slower is worth far less). Pure and monotonic: a faster best lap always
+ * earns more. A race also pays `podiumBonus` for its finishing position —
+ * `Progression.recordRace` adds the two.
  */
 export interface RewardInput {
   parLapMs: number; // the track's par lap

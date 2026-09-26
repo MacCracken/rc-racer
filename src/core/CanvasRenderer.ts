@@ -470,6 +470,9 @@ export class Canvas2DRenderer implements IRenderer {
    */
   private drawVignette(w: number, h: number): void {
     const { width, height } = this.canvas;
+    // A 0-px canvas (a hidden or minimised embed) has nothing to darken, and
+    // drawImage throws on a 0-px source, which would stop the frame loop.
+    if (width === 0 || height === 0) return;
     let v = this.vignette;
     if (v === null || v.width !== width || v.height !== height) {
       v = this.makeCanvas(width, height);
@@ -518,6 +521,7 @@ export class Canvas2DRenderer implements IRenderer {
     ];
     // A narrow screen (a phone) drops LAST, then shrinks the HUD until the
     // columns and the position readout fit across it.
+    ctx.save();
     ctx.font = "16px system-ui, sans-serif";
     const widthAt1 = (cs: typeof cols): number =>
       cs.reduce(
@@ -534,7 +538,6 @@ export class Canvas2DRenderer implements IRenderer {
     const row1 = 8 * s;
     const row2 = 28 * s;
     const font = `${16 * s}px system-ui, sans-serif`;
-    ctx.save();
     ctx.font = font;
     ctx.textBaseline = "top";
     ctx.fillStyle = "rgba(0,0,0,0.35)";

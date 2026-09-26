@@ -100,3 +100,36 @@ test("settings: rebind a key by pressing it; reserved keys are refused", async (
   await page.locator('[data-action="close-settings"]').click();
   await expect(page.locator(".menu-footer .hint")).toContainText("E handbrake");
 });
+
+test("a 0-px canvas (a hidden embed) doesn't stop the frame loop", async ({
+  page,
+}) => {
+  await seedSave(page, ONBOARDED);
+  await page.goto("/");
+  await page.locator(start).click();
+  type Handles = {
+    renderer: { resize(w: number, h: number, dpr: number): void };
+    game: { lastFrameMs: number };
+  };
+  await page.evaluate(() =>
+    (window as unknown as Handles).renderer.resize(800, 0, 1),
+  );
+  const frameAt = () =>
+    page.evaluate(() => (window as unknown as Handles).game.lastFrameMs);
+  const before = await frameAt();
+  await expect.poll(frameAt).toBeGreaterThan(before); // still ticking
+});
+
+test("resizing to a phone re-frames the menu backdrop", async ({ page }) => {
+  await seedSave(page, ONBOARDED);
+  await page.goto("/");
+  const zoom = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { game: { camera: { zoom: number } } }).game
+          .camera.zoom,
+    );
+  const desktop = await zoom();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect.poll(zoom).toBeLessThan(desktop * 0.8);
+});

@@ -143,6 +143,8 @@ export class Game {
   private input: IInput;
   /** Also inside `input`; held here to poll its Start button for pause. */
   private gamepad: GamepadInput;
+  /** Also inside `input`; held here to re-light buttons on a re-render. */
+  private touch: TouchInput;
   private clockMs = 0;
   private lastFrameMs = 0;
   private frameHandle: number | null = null;
@@ -217,10 +219,11 @@ export class Game {
     this.viewScale = viewScaleFor(w, h);
     // Keyboard, gamepad and touch all drive at once: use whichever you like.
     this.gamepad = new GamepadInput();
+    this.touch = new TouchInput();
     this.input = new CompositeInput([
       new KeyboardInput(),
       this.gamepad,
-      new TouchInput(),
+      this.touch,
     ]);
     this.loop = new FixedTimestepLoop(1 / 120, (dt) => this.onStep(dt));
 
@@ -300,16 +303,14 @@ export class Game {
       return;
     }
     if ((e.code === "Escape" || e.code === "KeyP") && this.screen === "race") {
-      if (!e.repeat) {
-        this.audio.play("click");
-        if (this.paused) this.resume();
-        else this.pause();
-      }
+      if (!e.repeat) this.togglePause();
       return;
     }
     const quitting =
       e.code === "Escape" || e.code === "Backspace" || e.code === "KeyQ";
     if (quitting && this.screen !== "menu") {
+      // Leaving How to Play by key counts as seen, as a click does.
+      if (this.screen === "onboarding") this.markOnboarded();
       this.audio.play("click");
       this.backToMenu();
     }
@@ -341,6 +342,10 @@ export class Game {
     this.renderer.resize(window.innerWidth, window.innerHeight, dpr);
     this.camera.setViewport(window.innerWidth, window.innerHeight);
     this.viewScale = viewScaleFor(window.innerWidth, window.innerHeight);
+    // A race re-frames itself every step; the menus' backdrop is set once,
+    // so re-frame it now (e.g. a phone rotated on the menu).
+    if (this.screen !== "race" && this.screen !== "results")
+      this.syncPreviewCamera();
   }
 
   // --- screen flow -----------------------------------------------------
@@ -502,7 +507,12 @@ export class Game {
 
   /** A gamepad's Start button pauses and resumes a race, like Esc / P. */
   private pollGamepad(): void {
-    if (!this.gamepad.startPressed() || this.screen !== "race") return;
+    if (this.gamepad.startPressed() && this.screen === "race")
+      this.togglePause();
+  }
+
+  /** Esc / P / a gamepad's Start: pause a race, or resume a paused one. */
+  private togglePause(): void {
     this.audio.play("click");
     if (this.paused) this.resume();
     else this.pause();
@@ -530,6 +540,8 @@ export class Game {
     this.uiRoot.innerHTML = this.paused
       ? pauseHtml(this.settings.muted)
       : raceOverlay(this.settings.keyMap, this.settings.muted);
+    // New buttons: light the ones a finger is still holding.
+    this.touch.refresh();
   }
 
   // --- simulation ------------------------------------------------------
@@ -650,7 +662,7 @@ export class Game {
       total: this.arena.cars.length,
       bestLapMs: this.playerRace.bestLapMs,
       outcome,
-      parMs: this.currentTrack().parLapMs,
+      parMs: outcome.parMs,
       unlockedCarName:
         outcome.unlockedCar === null
           ? undefined

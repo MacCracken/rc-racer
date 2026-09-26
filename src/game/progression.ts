@@ -38,6 +38,8 @@ export interface RewardBreakdown {
 export interface RaceOutcome {
   creditsEarned: number;
   breakdown: RewardBreakdown;
+  /** The par lap (ms) the pace bonus was measured against. */
+  parMs: number;
   newRecord: boolean;
   oldBest: number;
   newBest: number;
@@ -199,6 +201,7 @@ export class Progression {
     return {
       creditsEarned,
       breakdown,
+      parMs: par,
       newRecord: beat,
       oldBest,
       newBest,
