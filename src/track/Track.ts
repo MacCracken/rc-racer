@@ -27,6 +27,13 @@ export interface TrackDef {
   vibe?: string;
   /** Rough difficulty 1..5 for menu display (does not affect the sim). */
   difficulty?: number;
+  /**
+   * Who you race here: the rivals' car class id, the upgrade tier (0-4) they
+   * run in every slot, and an optional stat `factor` (e.g. < 1 to detune the
+   * warm-up). Rival strength belongs to the track, not to the player's car.
+   * Defaults to stock street sedans.
+   */
+  rivals?: { car: string; tier: number; factor?: number };
 }
 
 export interface Gate {

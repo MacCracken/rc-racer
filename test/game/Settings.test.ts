@@ -185,6 +185,14 @@ describe("settings migration", () => {
     expect(out.keyMap.throttle).toEqual(["KeyJ"]);
       });
 
+  it("keeps a saved mute, and treats a missing or junk one as sound on", () => {
+    expect(migrateSettings({ muted: true }).muted).toBe(true);
+    expect(migrateSettings({ muted: false }).muted).toBe(false);
+    expect(migrateSettings({}).muted).toBe(false);
+    expect(migrateSettings({ muted: "yes" }).muted).toBe(false);
+    expect(migrate(blankSave({ settings: { muted: true } })).settings.muted).toBe(true);
+      });
+
   it("migrateSettings handles null/non-object without throwing", () => {
     expect(migrateSettings(null)).toEqual(defaultSettings());
     expect(migrateSettings("garbage")).toEqual(defaultSettings());

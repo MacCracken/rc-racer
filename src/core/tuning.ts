@@ -10,6 +10,13 @@ export const MAX_STEPS_PER_FRAME = 8;
 // Camera & follow tuning
 export const CAMERA_LERP_RATE = 14;      // 1/s exponential smoothing
 export const CAMERA_LOOKAHEAD = 0.35;    // fraction of velocity to look ahead
+// Speed zoom (screen px per world px): close in when slow, pull out at top
+// speed to show more of the road ahead. Eased so it breathes, not jitters.
+export const CAMERA_ZOOM_SLOW = 0.8;
+export const CAMERA_ZOOM_FAST = 0.55;
+export const CAMERA_ZOOM_RATE = 2;       // 1/s exponential smoothing
+/** Wide shot for the menus' live backdrop. */
+export const CAMERA_ZOOM_MENU = 0.55;
 
 // Gate tunnel prevention
 export const GATE_SUBSTEPS = 4;         // sub-steps per fixed dt for gate checks

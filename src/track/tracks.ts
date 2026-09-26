@@ -35,6 +35,8 @@ export const overture: TrackDef = {
   gateCount: 8,
   parLapMs: 18000,
   aiPace: 0.82,
+  // Warm-up: stock sedans, detuned a touch.
+  rivals: { car: "street-sedan", tier: 0, factor: 0.92 },
 };
 
 // --- Hairpin: a tight, fast little loop for tighter-cornering cars. ---
@@ -57,6 +59,7 @@ export const hairpin: TrackDef = {
   gateCount: 6,
   parLapMs: 12000,
   aiPace: 0.78,
+  rivals: { car: "street-sedan", tier: 0 },
 };
 
 // --- Dust Bowl: a rough, high-grip-needed oval. ---
@@ -79,6 +82,7 @@ export const dustBowl: TrackDef = {
   gateCount: 8,
   parLapMs: 14000,
   aiPace: 0.8,
+  rivals: { car: "brawler", tier: 0 },
 };
 
 // --- Riverbend: a big, flowing wavy oval. Wide, forgiving. ---
@@ -101,6 +105,7 @@ export const riverbend: TrackDef = {
   gateCount: 10,
   parLapMs: 17000,
   aiPace: 0.85,
+  rivals: { car: "street-sedan", tier: 1 },
 };
 
 // --- Clover: a three-lobe circuit. Mixed fast and tight. ---
@@ -123,6 +128,8 @@ export const clover: TrackDef = {
   gateCount: 9,
   parLapMs: 17000,
   aiPace: 0.8,
+  // Fast lobes suit buggies; detuned so a well-built sedan can still win.
+  rivals: { car: "buggy", tier: 0, factor: 0.86 },
 };
 
 // --- Slalom: a tight, high-frequency weave that punishes understeer. ---
@@ -145,6 +152,7 @@ export const slalom: TrackDef = {
   gateCount: 10,
   parLapMs: 14000,
   aiPace: 0.78,
+  rivals: { car: "street-sedan", tier: 2 },
 };
 
 export const tracks: TrackDef[] = [

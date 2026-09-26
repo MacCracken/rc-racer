@@ -6,7 +6,7 @@
  * thing that touches the screen.
  */
 import { FixedTimestepLoop } from "../core/FixedTimestepLoop.ts";
-import { Camera } from "../core/Camera.ts";
+import { Camera, speedZoom } from "../core/Camera.ts";
 import {
   KeyboardInput,
   KEY_ACTIONS,
@@ -29,6 +29,7 @@ import type { TrackDef } from "../track/Track.ts";
 import { buildTrack } from "../track/Track.ts";
 import { carById, carClasses as DEFAULT_CARS, type CarClass } from "./cars.ts";
 import { Progression } from "./progression.ts";
+import { rivalCarFor, rivalField, rivalLabel } from "./rivals.ts";
 import {
   UPGRADE_TREE,
   nextTier,
@@ -47,7 +48,16 @@ import {
   type SkidState,
 } from "../core/SkidMarks.ts";
 import type { Ghost } from "../race/Ghost.ts";
-import { CAR_LENGTH, CAR_WIDTH, CAMERA_LERP_RATE, CAMERA_LOOKAHEAD } from "../core/tuning.ts";
+import {
+  CAR_LENGTH,
+  CAR_WIDTH,
+  CAMERA_LERP_RATE,
+  CAMERA_LOOKAHEAD,
+  CAMERA_ZOOM_FAST,
+  CAMERA_ZOOM_MENU,
+  CAMERA_ZOOM_RATE,
+  CAMERA_ZOOM_SLOW,
+} from "../core/tuning.ts";
 import {
   menuHtml,
   garageHtml,
@@ -183,6 +193,7 @@ export class Game {
     this.prog.setSettings(this.settings);
     this.input.setKeyMap(this.settings.keyMap);
     this.applyTheme();
+    this.audio.setMuted(this.settings.muted);
 
     // Preview arena so the first render has something to draw.
     this.arena = createArena(
@@ -308,6 +319,7 @@ export class Game {
       x: p.body.position.x,
       y: p.body.position.y,
     };
+    this.camera.zoom = CAMERA_ZOOM_MENU;
   }
 
   // Quit to the menu from a race or results screen (Esc/Q/Backspace or the
@@ -354,12 +366,13 @@ export class Game {
     this.clockMs = 0;
     this.confettiStartFrameMs = null;
     const track = buildTrack(this.currentTrack());
-    const stats = this.currentStats();
-    const paces = Array.from({ length: this.rivals }, (_, i) => {
-      const base = track.def.aiPace ?? 0.78;
-      return Math.min(0.98, base + (i - 1) * 0.05);
-    });
-    this.arena = createArena(track, stats, paces);
+    // The field comes from the track (its rival car + tier), never from the
+    // player's garage: upgrading your car genuinely pulls you ahead of it.
+    this.arena = createArena(
+      track,
+      this.currentStats(),
+      rivalField(track.def, this.rivals),
+    );
     this.ghost = this.prog.ghostFor(track.def.id);
     this.playerRace = new RaceState(this.arena.track, () => this.clockMs);
     this.racers = [];
@@ -379,9 +392,10 @@ export class Game {
     this.lastInput = neutralInput();
     this.prevLap = 0;
     this.screen = "race";
-    this.uiRoot.innerHTML = raceOverlay(this.settings.keyMap);
+    this.uiRoot.innerHTML = raceOverlay(this.settings.keyMap, this.settings.muted);
     const p = this.arena.cars[0]!;
     this.camera.view = { x: p.body.position.x, y: p.body.position.y };
+    this.camera.zoom = CAMERA_ZOOM_SLOW; // parked on the grid: close in
   }
 
   // --- simulation ------------------------------------------------------
@@ -439,13 +453,22 @@ export class Game {
   }
 
   private followCamera(dt: number): void {
-    const pb = this.arena.cars[0]!.body;
+    const player = this.arena.cars[0]!;
+    const pb = player.body;
     this.camera.lerpTo(
       {
         x: pb.position.x + pb.velocity.x * CAMERA_LOOKAHEAD,
         y: pb.position.y + pb.velocity.y * CAMERA_LOOKAHEAD,
       },
       CAMERA_LERP_RATE,
+      dt,
+    );
+    // Speed zoom: close in when slow, pull out at speed to see further ahead.
+    const speedFrac =
+      Math.abs(forwardSpeed(pb)) / Math.max(1, player.stats.maxSpeed);
+    this.camera.zoomTo(
+      speedZoom(speedFrac, CAMERA_ZOOM_SLOW, CAMERA_ZOOM_FAST),
+      CAMERA_ZOOM_RATE,
       dt,
     );
   }
@@ -521,6 +544,7 @@ export class Game {
           : this.lastFrameMs - this.confettiStartFrameMs,
       fps: this.fps,
       look: this.carLook(),
+      rivalLook: rivalCarFor(this.arena.track.def).look,
       controls: { steer: this.lastInput.steer, braking: this.lastInput.brake > 0 },
       rivalControls: this.racers.map((r) => ({
         steer: r.input.steer,
@@ -565,6 +589,16 @@ export class Game {
        });
     else if (action === "reset-settings")
       this.commitSettings({ ...this.settings, keyMap: defaultSettings().keyMap });
+    else if (action === "toggle-sound") {
+      this.commitSettings({ ...this.settings, muted: !this.settings.muted });
+      // Mid-race the overlay's button shows the state; redraw it (which
+      // also drops its focus, so Space/Enter can't re-toggle it).
+      if (this.screen === "race")
+        this.uiRoot.innerHTML = raceOverlay(
+          this.settings.keyMap,
+          this.settings.muted,
+        );
+    }
 
     // Selections and purchases are saved as they happen, not at the next
     // race's end — closing the tab must not undo a purchase.
@@ -644,6 +678,7 @@ export class Game {
       selected: t.id === this.prog.selectedTrackId,
       vibe: t.vibe,
       difficulty: t.difficulty,
+      rivals: rivalLabel(t),
     }));
 
     const carOwned: OwnedUpgrades = this.prog.upgradesFor(
@@ -686,6 +721,7 @@ export class Game {
     return {
       colorMode: this.settings.colorMode,
       hudSize: this.settings.hudSize,
+      muted: this.settings.muted,
       bindings: KEY_ACTIONS.map((a) => ({
         action: a,
         label: ACTION_LABELS[a],
@@ -703,6 +739,7 @@ export class Game {
     this.prog.setSettings(next);
     this.input.setKeyMap(next.keyMap);
     this.applyTheme();
+    this.audio.setMuted(next.muted);
     this.save();
        }
 

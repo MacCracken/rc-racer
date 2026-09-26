@@ -12,7 +12,14 @@ import {
   type InputState,
 } from "../../src/core/Input.ts";
 import type { IRenderer, RenderScene } from "../../src/core/types.ts";
-import { FIXED_DT } from "../../src/core/tuning.ts";
+import {
+  CAMERA_ZOOM_FAST,
+  CAMERA_ZOOM_SLOW,
+  FIXED_DT,
+} from "../../src/core/tuning.ts";
+import { speedZoom, type Camera } from "../../src/core/Camera.ts";
+import { NullAudio } from "../../src/core/Audio.ts";
+import { freshUpgrades, SLOTS } from "../../src/game/upgrades.ts";
 
 /**
  * Director-level regressions: the Game wiring (screen flow, clicks, clock,
@@ -24,6 +31,7 @@ import { FIXED_DT } from "../../src/core/tuning.ts";
 interface GameInternals {
   screen: string;
   clockMs: number;
+  camera: Camera;
   input: IInput;
   arena: Arena;
   playerRace: RaceState;
@@ -37,9 +45,9 @@ interface GameInternals {
   renderScene(): void;
 }
 
-function makeGame(credits = 0) {
+function makeGame(credits = 0, prog = Progression.fresh()) {
   const store = new MemorySaveStore();
-  const prog = Progression.fresh();
+  const audio = new NullAudio();
   prog.setCredits(credits);
   const scenes: RenderScene[] = [];
   const renderer: IRenderer = {
@@ -51,9 +59,9 @@ function makeGame(credits = 0) {
     addEventListener() {},
     removeEventListener() {},
   } as unknown as HTMLElement;
-  const game = new Game(prog, { renderer, uiRoot, store, rivals: 3 });
+  const game = new Game(prog, { renderer, uiRoot, store, audio, rivals: 3 });
   const lastScene = (): RenderScene | undefined => scenes[scenes.length - 1];
-  return { g: game as unknown as GameInternals, prog, store, lastScene };
+  return { g: game as unknown as GameInternals, prog, store, audio, lastScene };
 }
 
 /** Swap the keyboard for a scripted input. */
@@ -154,6 +162,72 @@ describe("Game — live race position", () => {
     // Every rival has pulled away; the old lap-time proxy tied the whole
     // field on lap 1 and always read P1.
     expect(g.playerPosition()).toBe(4);
+  });
+});
+
+describe("Game — rivals come from the track, not your garage", () => {
+  it("the field is identical whether you drive a stock sedan or a maxed brawler", () => {
+    const rivalStats = (prog: Progression): unknown => {
+      const { g } = makeGame(0, prog);
+      g.startRace();
+      return g.arena.cars.filter((c) => !c.isPlayer).map((c) => c.stats);
+    };
+    const stock = rivalStats(Progression.fresh());
+
+    const rich = Progression.fresh();
+    rich.setCredits(1e6);
+    rich.unlockCar("brawler");
+    const maxed = freshUpgrades();
+    for (const s of SLOTS) maxed[s] = 4;
+    rich.data.upgrades.brawler = maxed;
+    const { g } = makeGame(0, rich);
+    g.startRace();
+    expect(g.arena.cars[0].stats.maxSpeed).toBeGreaterThan(250); // really maxed
+    expect(rivalStats(rich)).toEqual(stock);
+  });
+});
+
+describe("Game — speed zoom", () => {
+  it("starts close in on the grid and pulls out as the car gets up to speed", () => {
+    const { g } = makeGame();
+    g.startRace();
+    expect(g.camera.zoom).toBe(CAMERA_ZOOM_SLOW);
+    autopilot(g);
+    for (let i = 0; i < 3 / FIXED_DT; i++) {
+      g.onStep(FIXED_DT);
+      expect(g.camera.zoom).toBeLessThanOrEqual(CAMERA_ZOOM_SLOW);
+      expect(g.camera.zoom).toBeGreaterThanOrEqual(CAMERA_ZOOM_FAST);
+    }
+    expect(g.camera.zoom).toBeLessThan(CAMERA_ZOOM_SLOW - 0.1);
+  });
+
+  it("maps speed to zoom: close when parked, wide at top speed, clamped", () => {
+    expect(speedZoom(0, 0.8, 0.55)).toBe(0.8);
+    expect(speedZoom(1, 0.8, 0.55)).toBe(0.55);
+    expect(speedZoom(0.5, 0.8, 0.55)).toBeCloseTo(0.675, 10);
+    expect(speedZoom(3, 0.8, 0.55)).toBe(0.55);
+    expect(speedZoom(-1, 0.8, 0.55)).toBe(0.8);
+  });
+});
+
+describe("Game — mute", () => {
+  it("the Sound toggle silences audio and is saved", () => {
+    const { g, audio, store } = makeGame();
+    expect(audio.muted).toBe(false);
+    click(g, { "data-action": "toggle-sound" });
+    expect(audio.muted).toBe(true);
+    expect(store.load()?.settings.muted).toBe(true);
+    audio.play("lap");
+    expect(audio.log.some((e) => e.ev === "lap")).toBe(false);
+    click(g, { "data-action": "toggle-sound" });
+    expect(audio.muted).toBe(false);
+  });
+
+  it("a saved mute is honoured from the first frame", () => {
+    const prog = Progression.fresh();
+    prog.setSettings({ ...prog.settings, muted: true });
+    const { audio } = makeGame(0, prog);
+    expect(audio.muted).toBe(true);
   });
 });
 

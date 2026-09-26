@@ -20,6 +20,8 @@ export interface Settings {
   keyMap: KeyMap;
   colorMode: ColorMode;
   hudSize: HudSize;
+  /** All game sound off. */
+  muted: boolean;
 }
 
 /**
@@ -43,6 +45,7 @@ export function defaultSettings(): Settings {
     keyMap: defaultKeyMap(),
     colorMode: "std",
     hudSize: "md",
+    muted: false,
      };
 }
 
@@ -58,6 +61,7 @@ export function migrateSettings(input: unknown): Settings {
   if (raw.hudSize === "sm" || raw.hudSize === "md" || raw.hudSize === "lg") {
     s.hudSize = raw.hudSize;
      }
+  if (typeof raw.muted === "boolean") s.muted = raw.muted;
   return s;
 }
 

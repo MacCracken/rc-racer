@@ -39,6 +39,8 @@ export interface TrackRow {
     /** Flavour line + rough difficulty for the menu (both optional). */
   vibe?: string;
   difficulty?: number;
+  /** Who you'll race there, e.g. "vs 1/10 Buggy +1". */
+  rivals?: string;
 }
 
 export interface UpgradeRow {
@@ -85,6 +87,7 @@ export interface BindRow {
 export interface SettingsView {
   colorMode: ColorMode;
   hudSize: HudSize;
+  muted: boolean;
   bindings: BindRow[];
     /** True while a key capture is pending, and which action is being set. */
   rebinding: boolean;
@@ -169,10 +172,12 @@ export function menuHtml(m: UiModel): string {
            .filter(Boolean)
            .join(" ");
         const clear = t.cleared ? " ✓" : "";
+        const about = [t.vibe, t.rivals].filter(Boolean).map((s) => esc(s!)).join(" · ");
         return `
           <button class="${cls}" data-selecttrack="${t.id}"${locked ? " disabled" : ""}>
            <span class="track-name">${esc(t.name)}</span>
            <span class="track-meta">${t.laps} laps · par ${esc(t.parLabel)}${t.difficulty !== undefined ? " · " + "●".repeat(t.difficulty) : ""}${clear}</span>
+           ${about ? `<span class="track-about">${about}</span>` : ""}
           </button>`;
         })
       .join("");
@@ -310,13 +315,24 @@ export function resultsHtml(view: ResultsView): string {
 
 // --- RACE (in-race overlay; the live HUD is drawn on the canvas itself) ---
 
-/** Minimal overlay shown during a race: a quit control + the key hint. */
-export function raceOverlay(km: KeyMap): string {
+/** Minimal overlay shown during a race: quit + mute controls + the key hint. */
+export function raceOverlay(km: KeyMap, muted: boolean): string {
   return `
      <div class="screen screen-race-overlay">
-       <button class="ghost quit" data-action="quit">◀ Menu</button>
+       <div class="race-controls">
+         <button class="ghost" data-action="quit">◀ Menu</button>
+         ${soundButton(muted)}
+       </div>
        <div class="hint race-hint">${esc(controlsHint(km))}</div>
      </div>`;
+}
+
+/**
+ * The mute toggle. Screen readers get a fixed name ("Mute") with the state in
+ * aria-pressed; sighted players see the current state on the button.
+ */
+function soundButton(muted: boolean): string {
+  return `<button class="ghost sound" data-action="toggle-sound" aria-label="Mute" aria-pressed="${muted}">${muted ? "🔇 Sound off" : "🔊 Sound on"}</button>`;
 }
 
 /** Onboarding / how-to screen. */
@@ -368,7 +384,7 @@ export function settingsHtml(v: SettingsView): string {
            <div class="settings-title">Settings</div>
            <div class="settings-body">
              <div class="setting-group">
-               <div class="col-head">DISPLAY</div>
+               <div class="col-head">DISPLAY &amp; SOUND</div>
                <div class="setting-row">
                  <span>Colorblind mode</span>
                  <button class="ghost" data-action="toggle-colorblind">${cbOn ? "On" : "Off"}</button>
@@ -379,6 +395,10 @@ export function settingsHtml(v: SettingsView): string {
                       HUD_SIZE_LABEL[v.hudSize],
         )}</button>
               </div>
+               <div class="setting-row">
+                 <span>Sound</span>
+                 ${soundButton(v.muted)}
+               </div>
              </div>
              <div class="setting-group">
                <div class="col-head">KEY BINDINGS</div>

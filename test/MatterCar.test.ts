@@ -144,11 +144,15 @@ function distToCenterLine(cl: Vec2[], p: Vec2): number {
   return best;
 }
 
+/** `n` identical rivals, enough to fill the grid. */
+const field = (n: number) =>
+  Array.from({ length: n }, () => ({ stats: defaultCarStats, pace: 0.8 }));
+
 describe("starting grid", () => {
   it("puts every car of a full field on the asphalt, apart, on every track", () => {
     for (const def of tracks) {
       const track = buildTrack(def);
-      const arena = createArena(track, defaultCarStats, [0.8, 0.8, 0.8, 0.8, 0.8]);
+      const arena = createArena(track, defaultCarStats, field(5));
       // The collision band's edge for a car's centre (see stepCar).
       const limit = track.width / 2 - (Math.max(CAR_LENGTH, CAR_WIDTH) / 2) * 0.7;
       const pos = arena.cars.map((c) => c.body.position);
@@ -165,7 +169,7 @@ describe("starting grid", () => {
 
   it("keeps the player on pole, on the start line", () => {
     const track = buildTrack(dustBowl);
-    const arena = createArena(track, defaultCarStats, [0.8, 0.8, 0.8]);
+    const arena = createArena(track, defaultCarStats, field(3));
     expect(arena.cars[0].body.position.x).toBeCloseTo(track.start.pos.x, 6);
     expect(arena.cars[0].body.position.y).toBeCloseTo(track.start.pos.y, 6);
   });

@@ -134,10 +134,19 @@ export interface Arena {
   cars: ArenaCar[];
 }
 
+/**
+ * A rival's car + autopilot pace. The caller decides these (from the track),
+ * so rivals never inherit the player's car or upgrades.
+ */
+export interface RivalSpec {
+  stats: CarStats;
+  pace: number;
+}
+
 export function createArena(
   track: BuiltTrack,
   playerStats: CarStats,
-  rivalPaces: number[] = [],
+  rivals: RivalSpec[] = [],
 ): Arena {
   const walls = buildWalls(track);
   const cars: ArenaCar[] = [
@@ -148,22 +157,15 @@ export function createArena(
       label: "you",
     },
   ];
-  for (let i = 0; i < rivalPaces.length; i++) {
-    // Vary the fields a touch so a faster pace is visibly faster.
-    const stat: CarStats = {
-      ...playerStats,
-      maxSpeed: playerStats.maxSpeed * (0.9 + 0.03 * i),
-      accel: playerStats.accel * (0.9 + 0.03 * i),
-      grip: playerStats.grip * (0.86 + 0.02 * i),
-    };
+  rivals.forEach((r, i) => {
     cars.push({
       isPlayer: false,
-      body: createCarBody(track, stat, i + 1),
-      stats: stat,
-      pace: rivalPaces[i],
+      body: createCarBody(track, r.stats, i + 1),
+      stats: r.stats,
+      pace: r.pace,
       label: `rival${i + 1}`,
     });
-  }
+  });
   return { track, walls, cars };
 }
 

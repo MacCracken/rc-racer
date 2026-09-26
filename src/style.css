@@ -173,6 +173,11 @@ body {
   color: #9fb4a8;
 }
 
+.track-about {
+  font-size: 11px;
+  color: #7f968a;
+}
+
 .hint {
   margin-top: 18px;
   font-size: 12px;
@@ -501,11 +506,16 @@ button {
 }
 
 /* Bottom-left: the canvas HUD owns the top bar and the top-right minimap. */
-.screen-race-overlay .quit {
+.race-controls {
   position: fixed;
   bottom: 12px;
   left: 14px;
+  display: flex;
+  gap: 8px;
   pointer-events: auto;
+}
+
+.race-controls button {
   background: rgba(8, 14, 11, 0.7);
 }
 

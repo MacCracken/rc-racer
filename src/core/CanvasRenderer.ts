@@ -5,7 +5,12 @@ import type { BuiltTrack } from "../track/Track.ts";
 import type { RaceState } from "../race/RaceState.ts";
 import type { SkidMark } from "./SkidMarks.ts";
 import type { Ghost } from "../race/Ghost.ts";
-import { CAR_LENGTH, CAR_WIDTH, KMH_PER_PX_S } from "./tuning.ts";
+import {
+  CAMERA_ZOOM_SLOW,
+  CAR_LENGTH,
+  CAR_WIDTH,
+  KMH_PER_PX_S,
+} from "./tuning.ts";
 import { formatLap, currentLapTimeMs } from "../race/RaceState.ts";
 import {
   carPalette,
@@ -34,7 +39,8 @@ const IDLE: CarControls = { steer: 0, braking: false };
 
 /** The static track, pre-painted at a fixed world->pixel scale. */
 interface TrackArt {
-  key: string;
+  /** Which track (id + width) it was painted for. */
+  id: string;
   canvas: HTMLCanvasElement;
   /** World position of the canvas's top-left corner. */
   x: number;
@@ -102,6 +108,7 @@ export class Canvas2DRenderer implements IRenderer {
       fps,
       hud = true,
       look = "sedan",
+      rivalLook = look,
       controls = IDLE,
       rivalControls = [],
     } = scene;
@@ -114,7 +121,15 @@ export class Canvas2DRenderer implements IRenderer {
     this.drawSkidMarks(skidMarks, camera);
     this.drawGhost(ghost, camera);
     if (hud) this.drawNextGate(track, camera, race);
-    this.drawCars(car, rivals ?? [], look, controls, rivalControls, camera);
+    this.drawCars(
+      car,
+      rivals ?? [],
+      look,
+      rivalLook,
+      controls,
+      rivalControls,
+      camera,
+    );
     this.drawVignette(w, h);
     if (hud)
       this.drawHUD(
@@ -170,17 +185,25 @@ export class Canvas2DRenderer implements IRenderer {
   }
 
   /**
-   * Blit the pre-painted track. It is (re)painted when the track changes or
-   * the zoom / pixel density does, at about one canvas pixel per device pixel.
+   * Blit the pre-painted track. It is painted once per track, at about one
+   * canvas pixel per device pixel for the *closest* zoom the camera reaches,
+   * so the per-frame speed zoom never triggers a repaint. It only repaints
+   * for a new track or when it needs more resolution (e.g. a sharper screen).
    */
   private drawTrackArt(track: BuiltTrack, cam: Camera): void {
     const b = track.bounds;
     const worldW = b.maxX - b.minX + ART_MARGIN * 2;
     const worldH = b.maxY - b.minY + ART_MARGIN * 2;
-    let scale = Math.min(1.5, Math.max(0.5, cam.zoom * this.dpr));
-    scale = Math.min(scale, Math.sqrt(ART_MAX_PIXELS / (worldW * worldH)));
-    const key = `${track.def.id}|${track.width}|${scale.toFixed(3)}`;
-    if (this.art?.key !== key) this.art = this.paintArt(track, key, scale, worldW, worldH);
+    const cap = Math.min(1.5, Math.sqrt(ART_MAX_PIXELS / (worldW * worldH)));
+    const want = Math.min(
+      cap,
+      Math.max(0.5, Math.max(cam.zoom, CAMERA_ZOOM_SLOW) * this.dpr),
+    );
+    const id = `${track.def.id}|${track.width}`;
+    if (this.art === null || this.art.id !== id || this.art.scale < want * 0.97) {
+      const scale = Math.min(cap, Math.ceil(want * 4) / 4);
+      this.art = this.paintArt(track, id, scale, worldW, worldH);
+    }
     const art = this.art;
     if (art === null) return;
     const p = cam.toScreen({ x: art.x, y: art.y });
@@ -195,7 +218,7 @@ export class Canvas2DRenderer implements IRenderer {
 
   private paintArt(
     track: BuiltTrack,
-    key: string,
+    id: string,
     scale: number,
     worldW: number,
     worldH: number,
@@ -215,7 +238,7 @@ export class Canvas2DRenderer implements IRenderer {
     const asphalt = (tg && g.createPattern(tile, "repeat")) ?? surface;
     g.setTransform(scale, 0, 0, scale, -x * scale, -y * scale);
     paintTrackArt(g, track, asphalt, sceneryFor(track));
-    return { key, canvas, x, y, scale };
+    return { id, canvas, x, y, scale };
   }
 
   /** Faded best-line overlay the player can chase; cosmetic only. */
@@ -300,30 +323,34 @@ export class Canvas2DRenderer implements IRenderer {
     player: Matter.Body,
     rivals: Matter.Body[],
     look: CarLook,
+    rivalLook: CarLook,
     controls: CarControls,
     rivalControls: CarControls[],
     cam: Camera,
   ): void {
     const { ctx } = this;
     const pal = carPalette(this.colorMode);
-    const all = [...rivals, player];
+    const all: [Matter.Body, CarLook][] = [
+      ...rivals.map((b): [Matter.Body, CarLook] => [b, rivalLook]),
+      [player, look],
+    ];
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.32)";
-    for (const b of all) {
+    for (const [b, bodyLook] of all) {
       const p = cam.toScreen(b.position);
       ctx.save();
       // Offset in screen space: the light doesn't turn with the car.
       ctx.translate(p.x + 3 * cam.zoom, p.y + 4.5 * cam.zoom);
       ctx.rotate(b.angle);
       ctx.scale(cam.zoom, cam.zoom);
-      traceCarShadow(ctx, look);
+      traceCarShadow(ctx, bodyLook);
       ctx.fill();
       ctx.restore();
     }
     // Rivals get their own pale trim, not the player's accent.
     const rivalTrim = shade(pal.rival, 0.6);
     rivals.forEach((b, i) =>
-      this.drawCarBody(b, look, pal.rival, rivalTrim, rivalControls[i] ?? IDLE, cam),
+      this.drawCarBody(b, rivalLook, pal.rival, rivalTrim, rivalControls[i] ?? IDLE, cam),
     );
     this.drawCarBody(player, look, pal.player, pal.nose, controls, cam);
     ctx.restore();

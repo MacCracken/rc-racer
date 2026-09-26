@@ -103,10 +103,32 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
   });
 
   it("race overlay offers a clickable quit control (regression: had no way to quit)", () => {
-    const html = raceOverlay(defaultKeyMap());
+    const html = raceOverlay(defaultKeyMap(), false);
     expect(html).toContain('data-action="quit"');
     // It should also advertise the Esc/Q shortcut.
     expect(html.toLowerCase()).toContain("esc");
+  });
+
+  it("offers a mute toggle in Settings and mid-race, labelled with its state", () => {
+    const view = {
+      colorMode: "std" as const,
+      hudSize: "md" as const,
+      bindings: [],
+      rebinding: false,
+      rebindingAction: null,
+    };
+    expect(settingsHtml({ ...view, muted: false })).toContain("🔊 Sound on");
+    expect(settingsHtml({ ...view, muted: true })).toContain("🔇 Sound off");
+    const race = raceOverlay(defaultKeyMap(), true);
+    expect(race).toContain('data-action="toggle-sound"');
+    expect(race).toContain('aria-pressed="true"');
+  });
+
+  it("the track list says who you'll race there", () => {
+    const m = model();
+    m.tracks[0].rivals = "vs 1/10 Buggy";
+    expect(menuHtml(m)).toContain("vs 1/10 Buggy");
+    expect(menuHtml(m)).toContain(">v · vs 1/10 Buggy<"); // with the track's vibe line
   });
 
   it("How to Play can start a race (as its button says) or go back to the menu", () => {
@@ -158,7 +180,7 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
     const m = { ...model(), keyMap: s.keyMap };
     for (const html of [
       menuHtml(m),
-      raceOverlay(s.keyMap),
+      raceOverlay(s.keyMap, false),
       onboardingHtml(s.keyMap),
     ]) {
       expect(html).toContain("E handbrake");
@@ -179,6 +201,7 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
     const html = settingsHtml({
       colorMode: "std",
       hudSize: "md",
+      muted: false,
       bindings: [{ action: "handbrake", label: "Handbrake", keys: ["Space"] }],
       rebinding: true,
       rebindingAction: "handbrake",

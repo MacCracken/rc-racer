@@ -41,8 +41,10 @@ export interface RenderScene {
   fps?: number;
    /** Draw the race HUD (timers, position, minimap)? Defaults to true. */
   hud?: boolean;
-   /** Body style of every car on track (rivals race the player's class). */
+   /** Body style of the player's car. */
   look?: CarLook;
+   /** Body style of the rivals' car (set by the track). Defaults to `look`. */
+  rivalLook?: CarLook;
    /** The player's live controls, for the wheels + brake lights. */
   controls?: CarControls;
    /** Each rival's live controls, aligned with `rivals`. */

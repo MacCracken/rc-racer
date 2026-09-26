@@ -31,10 +31,28 @@ export class Camera {
     this.view.y += (desired.y - this.view.y) * k;
   }
 
+  /** Ease the zoom toward `desired` (rate in 1/s), like `lerpTo`. */
+  zoomTo(desired: number, rate: number, dt: number): void {
+    this.zoom += (desired - this.zoom) * (1 - Math.exp(-rate * dt));
+  }
+
   toScreen(p: Vec2): Vec2 {
     return {
       x: (p.x - this.view.x) * this.zoom + this.width / 2,
       y: (p.y - this.view.y) * this.zoom + this.height / 2,
     };
   }
+}
+
+/**
+ * Speed-zoom target for a car at `speedFrac` (|speed| / its top speed, 0..1):
+ * `slow` when parked, `fast` at top speed, linear between.
+ */
+export function speedZoom(
+  speedFrac: number,
+  slow: number,
+  fast: number,
+): number {
+  const t = Math.max(0, Math.min(1, speedFrac));
+  return slow + (fast - slow) * t;
 }
