@@ -1,4 +1,4 @@
-import { computeReward, type RewardInput } from "./economy.ts";
+import { podiumBonus, rewardParts, type RewardInput } from "./economy.ts";
 import {
   applyBuild,
   nextTier,
@@ -20,10 +20,24 @@ export interface RaceResult {
   bestLapMs: number;
   finished: boolean;
   bestLapGhost?: Ghost;
+  /** Finishing position (1 = won) and field size, for the podium bonus. */
+  position?: number;
+  fieldSize?: number;
+}
+
+/** Where a race's credits came from (they sum to `creditsEarned`). */
+export interface RewardBreakdown {
+  /** Paid for finishing, by laps. */
+  base: number;
+  /** For a best lap under the track's par. */
+  pace: number;
+  /** For a podium finish against the AI field. */
+  podium: number;
 }
 
 export interface RaceOutcome {
   creditsEarned: number;
+  breakdown: RewardBreakdown;
   newRecord: boolean;
   oldBest: number;
   newBest: number;
@@ -163,8 +177,13 @@ export class Progression {
       bestLapMs: validLap ? result.bestLapMs : par,
       lapsCompleted: result.laps,
     };
-    let creditsEarned = 0;
-    if (result.finished) creditsEarned = computeReward(input);
+    const breakdown: RewardBreakdown = result.finished
+      ? {
+          ...rewardParts(input),
+          podium: podiumBonus(result.position ?? 0, result.fieldSize ?? 1),
+        }
+      : { base: 0, pace: 0, podium: 0 };
+    const creditsEarned = breakdown.base + breakdown.pace + breakdown.podium;
     const creditsBefore = this.data.credits;
     this.data.credits += creditsEarned;
 
@@ -179,6 +198,7 @@ export class Progression {
 
     return {
       creditsEarned,
+      breakdown,
       newRecord: beat,
       oldBest,
       newBest,

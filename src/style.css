@@ -184,6 +184,37 @@ body {
   color: #8a9e92;
 }
 
+.track-meta b {
+  color: #ffe9a8;
+  font-weight: 600;
+}
+
+/* The menu's actions stay pinned to the bottom of the window while the car
+   and track lists scroll, so Start is never below the fold on a short
+   laptop screen. Negative margins run it to the panel's edges. */
+.menu-footer {
+  position: sticky;
+  bottom: -16px; /* #ui's bottom padding: sit flush with the window edge */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 18px -32px -28px;
+  padding: 14px 32px 18px;
+  background: rgba(8, 14, 11, 0.97);
+  border-top: 1px solid #2a3830;
+  border-radius: 0 0 16px 16px;
+}
+
+.menu-footer .primary {
+  margin-top: 0;
+}
+
+.menu-footer .hint {
+  flex-basis: 100%;
+  margin-top: 2px;
+}
+
 button {
   font-family: inherit;
 }
@@ -457,6 +488,18 @@ button {
   font-weight: 700;
   font-size: 20px;
   margin: 12px 0 4px;
+}
+
+.reward-parts {
+  font-size: 13px;
+  color: #9fb4a8;
+  margin: 0 0 8px;
+}
+
+.result-record {
+  font-size: 14px;
+  color: #cfe0d6;
+  margin: 8px 0;
 }
 
 .new-record {

@@ -4,7 +4,12 @@ import {
   freshUpgrades,
   UPGRADE_TREE,
 } from "../../src/game/upgrades.ts";
-import { computeReward } from "../../src/game/economy.ts";
+import {
+  computeReward,
+  podiumBonus,
+  rewardParts,
+  PODIUM_BONUS,
+} from "../../src/game/economy.ts";
 import { carClasses } from "../../src/game/cars.ts";
 import type { CarStats } from "../../src/core/tuning.ts";
 
@@ -157,5 +162,29 @@ describe("Economy", () => {
         computeReward({ parLapMs: par, bestLapMs: 1, lapsCompleted: 3 }),
       ),
     ).toBe(true);
+  });
+});
+
+describe("Economy — podium bonus and the reward's parts", () => {
+  it("pays the podium (P1 most), nothing off it or when racing alone", () => {
+    expect(podiumBonus(1, 4)).toBe(PODIUM_BONUS[0]);
+    expect(podiumBonus(1, 4)).toBeGreaterThan(podiumBonus(2, 4));
+    expect(podiumBonus(2, 4)).toBeGreaterThan(podiumBonus(3, 4));
+    expect(podiumBonus(3, 4)).toBeGreaterThan(0);
+    expect(podiumBonus(4, 4)).toBe(0);
+    expect(podiumBonus(1, 1)).toBe(0); // no field, no race to win
+    expect(podiumBonus(0, 4)).toBe(0);
+    expect(podiumBonus(1.5, 4)).toBe(0);
+  });
+
+  it("rewardParts sums to computeReward, the pace part only below par", () => {
+    for (const best of [3000, 3800, 4000, 5000, Infinity, -1]) {
+      const inp = { parLapMs: 4000, bestLapMs: best, lapsCompleted: 3 };
+      const { base, pace } = rewardParts(inp);
+      expect(base + pace).toBe(computeReward(inp));
+      expect(base).toBe(60 + 3 * 8);
+      if (!(best > 0 && best < 4000)) expect(pace).toBe(0);
+      else expect(pace).toBeGreaterThan(0);
+    }
   });
 });

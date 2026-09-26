@@ -22,6 +22,8 @@ export interface Settings {
   hudSize: HudSize;
   /** All game sound off. */
   muted: boolean;
+  /** How to Play has been seen, so first launch shows it once. */
+  onboarded: boolean;
 }
 
 /**
@@ -47,6 +49,7 @@ export function defaultSettings(): Settings {
     colorMode: "std",
     hudSize: "md",
     muted: false,
+    onboarded: false,
   };
 }
 
@@ -63,6 +66,7 @@ export function migrateSettings(input: unknown): Settings {
     s.hudSize = raw.hudSize;
   }
   if (typeof raw.muted === "boolean") s.muted = raw.muted;
+  if (typeof raw.onboarded === "boolean") s.onboarded = raw.onboarded;
   return s;
 }
 

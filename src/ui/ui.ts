@@ -7,7 +7,7 @@
 import type { StatBar } from "../game/upgrades.ts";
 import type { RaceOutcome } from "../game/progression.ts";
 import { keyLabel, type ColorMode, type HudSize } from "../core/theme.ts";
-import { formatLap } from "../race/RaceState.ts";
+import { formatLap, formatSplit } from "../race/RaceState.ts";
 import { defaultKeyMap, type KeyAction, type KeyMap } from "../core/Input.ts";
 
 export type Screen =
@@ -36,6 +36,8 @@ export interface TrackRow {
   difficulty?: number;
   /** Who you'll race there, e.g. "vs 1/10 Buggy +1". */
   rivals?: string;
+  /** Your best lap here, formatted, once you have one. */
+  bestLabel?: string;
 }
 
 export interface UpgradeRow {
@@ -67,6 +69,8 @@ export interface ResultsView {
   total: number;
   bestLapMs: number;
   outcome: RaceOutcome;
+  /** The track's par lap (ms), to explain the pace bonus. */
+  parMs?: number;
   /** Display name of `outcome.unlockedCar` (falls back to its id). */
   unlockedCarName?: string;
 }
@@ -174,12 +178,13 @@ export function menuHtml(m: UiModel): string {
       return `
           <button class="${cls}" data-selecttrack="${t.id}"${locked ? " disabled" : ""}>
            <span class="track-name">${esc(t.name)}</span>
-           <span class="track-meta">${t.laps} laps · par ${esc(t.parLabel)}${t.difficulty !== undefined ? " · " + "●".repeat(t.difficulty) : ""}${clear}</span>
+           <span class="track-meta">${t.laps} laps · par ${esc(t.parLabel)}${t.bestLabel ? ` · best <b>${esc(t.bestLabel)}</b>` : ""}${t.difficulty !== undefined ? " · " + "●".repeat(t.difficulty) : ""}${clear}</span>
            ${about ? `<span class="track-about">${about}</span>` : ""}
           </button>`;
     })
     .join("");
 
+  const selected = m.tracks.find((t) => t.selected);
   return `
     <div class="screen screen-menu">
       <div class="title">RC RACER</div>
@@ -193,14 +198,14 @@ export function menuHtml(m: UiModel): string {
         <div class="col">
           <div class="col-head">TRACKS</div>
           ${tracks}
-          <button class="primary" data-action="start">Start race</button>
         </div>
       </div>
-      <div class="hint">${esc(controlsHint(m.keyMap))}</div>
-      <div class="menu-actions">
-        <button class="ghost" data-action="garage">Open garage</button>
+      <div class="menu-footer">
+        <button class="primary" data-action="start">▶ Start race${selected ? ` · ${esc(selected.name)}` : ""}</button>
+        <button class="ghost" data-action="garage">Garage</button>
         <button class="ghost" data-action="howto">How to Play</button>
         <button class="ghost" data-action="settings">Settings</button>
+        <div class="hint">${esc(controlsHint(m.keyMap))}</div>
       </div>
     </div>`;
 }
@@ -287,9 +292,27 @@ export function resultsHtml(view: ResultsView): string {
   const { outcome, position, total, bestLapMs } = view;
   const p = `P${position} / ${total}`;
   const timeStr = formatLap(bestLapMs);
+  // A record to beat next time: the new one, or how far off the old one.
   const record = outcome.newRecord
     ? `<div class="new-record">★ NEW RECORD · ${formatLap(outcome.newBest)}</div>`
-    : "";
+    : isFinite(outcome.oldBest) && isFinite(bestLapMs) && bestLapMs > 0
+      ? `<div class="result-record">Track record ${formatLap(outcome.oldBest)} (${formatSplit(bestLapMs - outcome.oldBest)})</div>`
+      : "";
+  // Where the credits came from, so "go faster" and "beat the field" both
+  // visibly pay. A zero pace bonus says how to earn one.
+  const { base, pace, podium } = outcome.breakdown;
+  const par = view.parMs !== undefined ? formatPar(view.parMs) : undefined;
+  const parts = [
+    `Finish +${base}`,
+    pace > 0
+      ? `Pace +${pace}${par ? ` (par ${par})` : ""}`
+      : par
+        ? `Pace +0 — beat par ${par} for a bonus`
+        : "",
+    podium > 0 ? `P${position} +${podium}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   // `unlockedCar` is a car you can now *afford*; buying it is still your call.
   const unlocked = outcome.unlockedCar
     ? `<div class="unlocks">★ New car affordable: ${esc(view.unlockedCarName ?? outcome.unlockedCar)} — unlock it from the menu</div>`
@@ -301,6 +324,7 @@ export function resultsHtml(view: ResultsView): string {
         <div class="result-position">${p}</div>
         <div class="result-time">Best lap: <b>${timeStr}</b></div>
         <div class="reward">+ ${outcome.creditsEarned} cr</div>
+        <div class="reward-parts">${esc(parts)}</div>
         ${record}
         ${unlocked}
         <div class="results-actions">
@@ -362,9 +386,10 @@ export function onboardingHtml(km: KeyMap): string {
          <div class="onboarding-title">How to Play — RC Racer</div>
          <div class="onboarding-body">
            <p><b>Drive:</b> ${esc(controlsHint(km))}. Hold the handbrake through a corner to drift.</p>
-           <p><b>Race:</b> Complete laps, beat your best time and finish ahead of the AI rivals.</p>
-           <p><b>Earn → Upgrade → Go Faster:</b> Credits are awarded for finishing. Spend them in the Garage to upgrade Engine, Tires, Brakes, Suspension, Aero, Chassis and Drift Kit. Each upgrade changes real physics.</p>
-           <p><b>Progress:</b> Clear a track to unlock the next. Pick different car classes for different tracks.</p>
+           <p><b>Race:</b> Go on the green light and complete the laps. Credits pay for finishing, more for a podium, and a bonus for a best lap under the track's par.</p>
+           <p><b>Chase your ghost:</b> Once you've set a time, a ghost car replays your best lap; the timer shows how far ahead (−) or behind (+) you are.</p>
+           <p><b>Earn → Upgrade → Go Faster:</b> Spend credits in the Garage on Engine, Tires, Brakes, Suspension, Aero, Chassis and Drift Kit — each changes real physics. Save up for faster car classes.</p>
+           <p><b>Progress:</b> Clear a track to unlock the next.</p>
          </div>
          <div class="onboarding-actions">
            <button class="ghost" data-action="close-onboarding">◀ Menu</button>

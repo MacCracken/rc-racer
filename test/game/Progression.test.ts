@@ -226,3 +226,32 @@ describe("Progression — save / load round-trip", () => {
     expect(m2).toEqual(newSave());
   });
 });
+
+describe("Progression — the podium pays", () => {
+  const race = (position?: number) => ({
+    trackId: "overture",
+    carId: "street-sedan",
+    laps: 3,
+    bestLapMs: 20000, // slower than par: no pace bonus
+    finished: true,
+    position,
+    fieldSize: 4,
+  });
+
+  it("adds the podium bonus to the credits, itemised in the breakdown", () => {
+    const p = Progression.fresh();
+    const won = p.recordRace(race(1));
+    expect(won.breakdown).toEqual({ base: 84, pace: 0, podium: 40 });
+    expect(won.creditsEarned).toBe(124);
+    expect(p.credits).toBe(124);
+    expect(p.recordRace(race(4)).breakdown.podium).toBe(0);
+    expect(p.recordRace(race()).breakdown.podium).toBe(0); // unknown position
+  });
+
+  it("an unfinished race pays nothing at all", () => {
+    const p = Progression.fresh();
+    const out = p.recordRace({ ...race(1), finished: false });
+    expect(out.breakdown).toEqual({ base: 0, pace: 0, podium: 0 });
+    expect(out.creditsEarned).toBe(0);
+  });
+});

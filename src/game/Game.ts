@@ -22,7 +22,7 @@ import {
   type Arena,
   type ArenaCar,
 } from "../physics/MatterCar.ts";
-import { currentLapTimeMs, RaceState } from "../race/RaceState.ts";
+import { currentLapTimeMs, formatLap, RaceState } from "../race/RaceState.ts";
 import { makeDriver } from "../race/AiDriver.ts";
 import { tracks as DEFAULT_TRACKS } from "../track/tracks.ts";
 import type { TrackDef } from "../track/Track.ts";
@@ -217,6 +217,10 @@ export class Game {
 
     // Load persisted UI prefs, or start from defaults, and seed the sim seams.
     this.settings = this.prog.settings ?? defaultSettings();
+    // A save from before the onboarding flag, with races in it, has clearly
+    // been played: don't greet that player with How to Play.
+    if (!this.settings.onboarded && this.prog.data.clearedTracks.length > 0)
+      this.settings = { ...this.settings, onboarded: true };
     this.prog.setSettings(this.settings);
     this.input.setKeyMap(this.settings.keyMap);
     this.applyTheme();
@@ -243,7 +247,7 @@ export class Game {
     window.addEventListener("keydown", this.onKeyDownBound);
     window.addEventListener("blur", this.onFocusLostBound);
     document.addEventListener("visibilitychange", this.onVisibilityBound);
-    this.showMenu();
+    this.showOpeningScreen();
     this.lastFrameMs = performance.now();
     this.frameHandle = requestAnimationFrame((t) => this.frame(t));
   }
@@ -315,6 +319,18 @@ export class Game {
   }
 
   // --- screen flow -----------------------------------------------------
+
+  /** First launch opens on How to Play; after that, straight to the menu. */
+  private showOpeningScreen(): void {
+    if (this.settings.onboarded) this.showMenu();
+    else this.showOnboarding();
+  }
+
+  /** How to Play has been seen: don't open on it again. */
+  private markOnboarded(): void {
+    if (!this.settings.onboarded)
+      this.commitSettings({ ...this.settings, onboarded: true });
+  }
 
   private showMenu(): void {
     this.screen = "menu";
@@ -582,6 +598,7 @@ export class Game {
     this.finished = true;
     this.audio.play("finish");
     this.confettiStartFrameMs = this.lastFrameMs;
+    const position = this.playerPosition();
     const outcome = this.prog.recordRace({
       trackId: this.currentTrack().id,
       carId: this.prog.selectedCarId,
@@ -589,14 +606,17 @@ export class Game {
       bestLapMs: this.playerRace.bestLapMs,
       bestLapGhost: this.playerRace.bestGhost,
       finished: true,
+      position,
+      fieldSize: this.arena.cars.length,
     });
     // A new record replaces the ghost: show (and next time chase) that one.
     this.ghost = this.prog.ghostFor(this.currentTrack().id);
     this.lastResults = {
-      position: this.playerPosition(),
+      position,
       total: this.arena.cars.length,
       bestLapMs: this.playerRace.bestLapMs,
       outcome,
+      parMs: this.currentTrack().parLapMs,
       unlockedCarName:
         outcome.unlockedCar === null
           ? undefined
@@ -757,6 +777,9 @@ export class Game {
     this.audio.play("click");
 
     const action = el.getAttribute("data-action");
+    // Leaving How to Play either way (to the menu, or straight into a race)
+    // means it has been seen.
+    if (this.screen === "onboarding") this.markOnboarded();
     if (action === "start" || action === "raceagain" || action === "restart")
       this.startRace();
     else if (action === "garage") this.showGarage();
@@ -863,6 +886,9 @@ export class Game {
       name: t.name,
       laps: t.laps,
       parLabel: t.parLapMs !== undefined ? formatPar(t.parLapMs) : "–",
+      bestLabel: isFinite(this.prog.bestLap(t.id))
+        ? formatLap(this.prog.bestLap(t.id))
+        : undefined,
       cleared: this.prog.isTrackCleared(t.id),
       unlocked: this.prog.isTrackUnlocked(i),
       selected: t.id === this.prog.selectedTrackId,

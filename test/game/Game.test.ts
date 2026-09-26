@@ -21,6 +21,8 @@ import { speedZoom, type Camera } from "../../src/core/Camera.ts";
 import { NullAudio } from "../../src/core/Audio.ts";
 import { freshUpgrades, SLOTS } from "../../src/game/upgrades.ts";
 import type { Ghost } from "../../src/race/Ghost.ts";
+import type { ResultsView } from "../../src/ui/ui.ts";
+import { podiumBonus } from "../../src/game/economy.ts";
 import { currentLapTimeMs } from "../../src/race/RaceState.ts";
 
 /**
@@ -49,6 +51,8 @@ interface GameInternals {
   pause(): void;
   chaseGhost(): Ghost;
   presentAudio(): void;
+  showOpeningScreen(): void;
+  lastResults: ResultsView | null;
 }
 
 /**
@@ -600,5 +604,51 @@ describe("Game — engine and tyre audio", () => {
       loudest = Math.max(loudest, audio.skid);
     }
     expect(loudest).toBeGreaterThan(0.2);
+  });
+});
+
+describe("Game — the finish pays for position", () => {
+  it("pays the podium bonus for where you finished, itemised for the results", () => {
+    const { g, prog } = makeGame();
+    g.startRace();
+    autopilot(g);
+    runToFinish(g);
+    const r = g.lastResults!;
+    expect(r.outcome.breakdown.podium).toBe(podiumBonus(r.position, 4));
+    const { base, pace, podium } = r.outcome.breakdown;
+    expect(r.outcome.creditsEarned).toBe(base + pace + podium);
+    expect(prog.credits).toBe(r.outcome.creditsEarned);
+    expect(r.parMs).toBe(18000); // Overture's par, to explain the pace bonus
+  });
+});
+
+describe("Game — first launch", () => {
+  it("opens on How to Play once; leaving it marks it seen, and saves that", () => {
+    const { g, prog, store } = makeGame();
+    g.showOpeningScreen();
+    expect(g.screen).toBe("onboarding");
+    click(g, { "data-action": "close-onboarding" });
+    expect(g.screen).toBe("menu");
+    expect(store.load()?.settings.onboarded).toBe(true);
+
+    const again = makeGame(0, prog).g; // next launch, same save
+    again.showOpeningScreen();
+    expect(again.screen).toBe("menu");
+  });
+
+  it("'Start Racing' from How to Play also counts as seen", () => {
+    const { g, prog } = makeGame();
+    g.showOpeningScreen();
+    click(g, { "data-action": "start" });
+    expect(g.screen).toBe("race");
+    expect(prog.settings.onboarded).toBe(true);
+  });
+
+  it("doesn't greet a player who has already raced (a save from before the flag)", () => {
+    const prog = Progression.fresh();
+    prog.data.clearedTracks = ["overture"];
+    const { g } = makeGame(0, prog);
+    g.showOpeningScreen();
+    expect(g.screen).toBe("menu");
   });
 });
