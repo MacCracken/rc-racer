@@ -117,6 +117,12 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
     expect(html.toLowerCase()).toContain("esc");
   });
 
+  it("the race overlay carries on-screen touch controls for every action", () => {
+    const html = raceOverlay(defaultKeyMap(), false);
+    for (const c of ["left", "right", "gas", "brake", "drift"])
+      expect(html).toContain(`data-touch="${c}"`);
+  });
+
   it("the race overlay can pause; the pause menu resumes, restarts or quits", () => {
     expect(raceOverlay(defaultKeyMap(), false)).toContain(
       'data-action="pause"',

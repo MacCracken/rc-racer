@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { KeyboardInput, defaultKeyMap } from "../src/core/Input.ts";
+import {
+  CompositeInput,
+  KeyboardInput,
+  defaultKeyMap,
+  mergeInputs,
+  neutralInput,
+  type IInput,
+  type InputState,
+} from "../src/core/Input.ts";
 
 /**
  * KeyboardInput against real (cancelable) events on plain EventTargets: which
@@ -95,5 +103,51 @@ describe("KeyboardInput", () => {
     target.dispatchEvent(key("keydown", "KeyW"));
     win.dispatchEvent(new Event("blur"));
     expect(input.sample().throttle).toBe(0);
+  });
+});
+
+describe("CompositeInput — keyboard, gamepad and touch at once", () => {
+  const src = (s: Partial<InputState>): IInput => ({
+    sample: () => ({ ...neutralInput(), ...s }),
+    attach() {},
+    detach() {},
+    setKeyMap() {},
+  });
+
+  it("each axis takes its strongest source; an idle one can't cancel it", () => {
+    expect(
+      mergeInputs([
+        { throttle: 1, brake: 0, steer: 0, handbrake: false },
+        { throttle: 0.3, brake: 0.2, steer: -0.4, handbrake: false },
+        { throttle: 0, brake: 0, steer: 0.1, handbrake: true },
+      ]),
+    ).toEqual({ throttle: 1, brake: 0.2, steer: -0.4, handbrake: true });
+    expect(mergeInputs([])).toEqual(neutralInput());
+  });
+
+  it("samples, attaches and rebinds every source", () => {
+    const seen: string[] = [];
+    const spy = (name: string, s: Partial<InputState>): IInput => ({
+      ...src(s),
+      attach: () => void seen.push(`attach ${name}`),
+      detach: () => void seen.push(`detach ${name}`),
+      setKeyMap: () => void seen.push(`keys ${name}`),
+    });
+    const c = new CompositeInput([
+      spy("kb", { steer: 1 }),
+      spy("pad", { throttle: 0.5 }),
+    ]);
+    expect(c.sample()).toMatchObject({ steer: 1, throttle: 0.5 });
+    c.attach({} as HTMLElement);
+    c.setKeyMap(defaultKeyMap());
+    c.detach();
+    expect(seen).toEqual([
+      "attach kb",
+      "attach pad",
+      "keys kb",
+      "keys pad",
+      "detach kb",
+      "detach pad",
+    ]);
   });
 });

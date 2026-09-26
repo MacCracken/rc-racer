@@ -347,8 +347,27 @@ export function raceOverlay(km: KeyMap, muted: boolean): string {
          ${soundButton(muted)}
        </div>
        <div class="hint race-hint">${esc(controlsHint(km))}</div>
+       ${TOUCH_CONTROLS}
      </div>`;
 }
+
+/**
+ * On-screen driving controls (see `core/TouchInput.ts`): steering under the
+ * left thumb, pedals + drift under the right. CSS shows them only on touch
+ * screens. Plain elements, not buttons, so they never take keyboard focus.
+ */
+const TOUCH_CONTROLS = `
+  <div class="touch-controls">
+    <div class="touch-steer">
+      <div class="touch-btn" data-touch="left" aria-label="Steer left">◀</div>
+      <div class="touch-btn" data-touch="right" aria-label="Steer right">▶</div>
+    </div>
+    <div class="touch-pedals">
+      <div class="touch-btn touch-drift" data-touch="drift" aria-label="Handbrake">DRIFT</div>
+      <div class="touch-btn touch-brake" data-touch="brake" aria-label="Brake">BRAKE</div>
+      <div class="touch-btn touch-gas" data-touch="gas" aria-label="Gas">GAS</div>
+    </div>
+  </div>`;
 
 /**
  * The pause menu. The race behind it is frozen (clock, cars, countdown) until
@@ -385,7 +404,8 @@ export function onboardingHtml(km: KeyMap): string {
        <div class="onboarding-panel">
          <div class="onboarding-title">How to Play — RC Racer</div>
          <div class="onboarding-body">
-           <p><b>Drive:</b> ${esc(controlsHint(km))}. Hold the handbrake through a corner to drift.</p>
+           <p class="no-touch"><b>Drive:</b> ${esc(controlsHint(km))}. Hold the handbrake through a corner to drift. A gamepad works too (stick, triggers, A to drift, Start to pause).</p>
+           <p class="touch-only"><b>Drive:</b> ◀ ▶ under your left thumb steer; GAS and BRAKE are on the right. Hold DRIFT through a corner to slide.</p>
            <p><b>Race:</b> Go on the green light and complete the laps. Credits pay for finishing, more for a podium, and a bonus for a best lap under the track's par.</p>
            <p><b>Chase your ghost:</b> Once you've set a time, a ghost car replays your best lap; the timer shows how far ahead (−) or behind (+) you are.</p>
            <p><b>Earn → Upgrade → Go Faster:</b> Spend credits in the Garage on Engine, Tires, Brakes, Suspension, Aero, Chassis and Drift Kit — each changes real physics. Save up for faster car classes.</p>

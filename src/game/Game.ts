@@ -7,7 +7,10 @@
  */
 import { FixedTimestepLoop } from "../core/FixedTimestepLoop.ts";
 import { Camera, speedZoom } from "../core/Camera.ts";
+import { GamepadInput } from "../core/Gamepad.ts";
+import { TouchInput } from "../core/TouchInput.ts";
 import {
+  CompositeInput,
   KeyboardInput,
   KEY_ACTIONS,
   neutralInput,
@@ -106,6 +109,11 @@ interface Racer {
   input: InputState;
 }
 
+/** Camera zoom multiplier for a `w` x `h` css-px viewport (see `viewScale`). */
+export function viewScaleFor(w: number, h: number): number {
+  return Math.max(0.5, Math.min(1, Math.min(w, h) / 600));
+}
+
 export interface GameDeps {
   renderer: IRenderer;
   uiRoot: HTMLElement;
@@ -133,6 +141,8 @@ export class Game {
 
   private camera: Camera;
   private input: IInput;
+  /** Also inside `input`; held here to poll its Start button for pause. */
+  private gamepad: GamepadInput;
   private clockMs = 0;
   private lastFrameMs = 0;
   private frameHandle: number | null = null;
@@ -141,6 +151,12 @@ export class Game {
   private fpsFrames = 0;
   /** Pixel density the canvas was last sized for (0 = not yet). */
   private dpr = 0;
+  /**
+   * Zoom multiplier for small screens (phones): below 600 css px on the short
+   * side the camera pulls out, so as much track is visible as on a laptop.
+   * 1 on anything bigger, leaving the tuned desktop framing alone.
+   */
+  private viewScale = 1;
   /** The player's input on the last step, for the car's wheels + lights. */
   private lastInput: InputState = neutralInput();
 
@@ -198,7 +214,14 @@ export class Game {
     const w = typeof window !== "undefined" ? window.innerWidth : 800;
     const h = typeof window !== "undefined" ? window.innerHeight : 600;
     this.camera = new Camera({ x: 0, y: 0 }, w, h, 0.55);
-    this.input = new KeyboardInput();
+    this.viewScale = viewScaleFor(w, h);
+    // Keyboard, gamepad and touch all drive at once: use whichever you like.
+    this.gamepad = new GamepadInput();
+    this.input = new CompositeInput([
+      new KeyboardInput(),
+      this.gamepad,
+      new TouchInput(),
+    ]);
     this.loop = new FixedTimestepLoop(1 / 120, (dt) => this.onStep(dt));
 
     this.onClickBound = (e: Event) => this.onClick(e);
@@ -298,6 +321,7 @@ export class Game {
     if ((window.devicePixelRatio || 1) !== this.dpr) this.onResize();
     const delta = (nowMs - this.lastFrameMs) / 1000;
     this.lastFrameMs = nowMs;
+    this.pollGamepad();
     this.loop.update(delta);
     this.fpsAcc += delta;
     this.fpsFrames++;
@@ -316,6 +340,7 @@ export class Game {
     this.dpr = dpr;
     this.renderer.resize(window.innerWidth, window.innerHeight, dpr);
     this.camera.setViewport(window.innerWidth, window.innerHeight);
+    this.viewScale = viewScaleFor(window.innerWidth, window.innerHeight);
   }
 
   // --- screen flow -----------------------------------------------------
@@ -383,7 +408,7 @@ export class Game {
       x: p.body.position.x,
       y: p.body.position.y,
     };
-    this.camera.zoom = CAMERA_ZOOM_MENU;
+    this.camera.zoom = CAMERA_ZOOM_MENU * this.viewScale;
   }
 
   // Quit to the menu from a race or results screen (Esc/Q/Backspace or the
@@ -471,7 +496,16 @@ export class Game {
     this.showRaceOverlay();
     const p = this.arena.cars[0]!;
     this.camera.view = { x: p.body.position.x, y: p.body.position.y };
-    this.camera.zoom = CAMERA_ZOOM_SLOW; // parked on the grid: close in
+    // Parked on the grid: close in.
+    this.camera.zoom = CAMERA_ZOOM_SLOW * this.viewScale;
+  }
+
+  /** A gamepad's Start button pauses and resumes a race, like Esc / P. */
+  private pollGamepad(): void {
+    if (!this.gamepad.startPressed() || this.screen !== "race") return;
+    this.audio.play("click");
+    if (this.paused) this.resume();
+    else this.pause();
   }
 
   /** Freeze a race in progress (Esc / P, the Pause button, or lost focus). */
@@ -588,7 +622,7 @@ export class Game {
     const speedFrac =
       Math.abs(forwardSpeed(pb)) / Math.max(1, player.stats.maxSpeed);
     this.camera.zoomTo(
-      speedZoom(speedFrac, CAMERA_ZOOM_SLOW, CAMERA_ZOOM_FAST),
+      speedZoom(speedFrac, CAMERA_ZOOM_SLOW, CAMERA_ZOOM_FAST) * this.viewScale,
       CAMERA_ZOOM_RATE,
       dt,
     );

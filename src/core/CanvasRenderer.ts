@@ -433,19 +433,7 @@ export class Canvas2DRenderer implements IRenderer {
     const { race, track, speed, nowMs, position, total, car, fps, rivals } =
       scene;
     const { ctx } = this;
-    const s = this.hudScale;
     const pad = 12;
-    const barH = 48 * s;
-    const row1 = 8 * s;
-    const row2 = 28 * s;
-    const font = `${16 * s}px system-ui, sans-serif`;
-    ctx.save();
-    ctx.font = font;
-    ctx.textBaseline = "top";
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillRect(0, 0, w, barH);
-    ctx.fillStyle = "#fff";
-
     const kmh = Math.round(Math.abs(speed) * KMH_PER_PX_S);
     // The lap being driven (1-based), not laps completed: the final lap
     // reads 3/3, not 2/3.
@@ -457,12 +445,37 @@ export class Canvas2DRenderer implements IRenderer {
 
     // Columns sized from worst-case text, so they never overlap at any HUD
     // size and don't shuffle as the digits change.
-    const cols: [text: string, widest: string][] = [
+    let cols: [text: string, widest: string][] = [
       [`LAP ${laps}`, "LAP 00/00"],
       [`BEST ${best}`, "BEST 00:00.000"],
       [`LAST ${last}`, "LAST 00:00.000"],
       [`NOW ${formatLap(cur)}`, "NOW 00:00.000"],
     ];
+    // A narrow screen (a phone) drops LAST, then shrinks the HUD until the
+    // columns and the position readout fit across it.
+    ctx.font = "16px system-ui, sans-serif";
+    const widthAt1 = (cs: typeof cols): number =>
+      cs.reduce(
+        (sum, [, widest]) => sum + ctx.measureText(widest).width + 24,
+        0,
+      ) + 90; // "P 4/4" on the right
+    let fit = (w - 2 * pad) / widthAt1(cols);
+    if (fit < 0.8) {
+      cols = cols.filter((_, i) => i !== 2);
+      fit = (w - 2 * pad) / widthAt1(cols);
+    }
+    const s = Math.max(0.55, Math.min(this.hudScale, fit));
+    const barH = 48 * s;
+    const row1 = 8 * s;
+    const row2 = 28 * s;
+    const font = `${16 * s}px system-ui, sans-serif`;
+    ctx.save();
+    ctx.font = font;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(0, 0, w, barH);
+    ctx.fillStyle = "#fff";
+
     let x = pad;
     let nowX = pad;
     for (const [text, widest] of cols) {
@@ -505,7 +518,16 @@ export class Canvas2DRenderer implements IRenderer {
 
     // minimap top-right, under the bar
     if (car)
-      this.drawMinimap(ctx, track, car, w, barH + pad, rivals, scene.ghostCar);
+      this.drawMinimap(
+        ctx,
+        track,
+        car,
+        w,
+        barH + pad,
+        s,
+        rivals,
+        scene.ghostCar,
+      );
 
     ctx.restore();
   }
@@ -516,12 +538,13 @@ export class Canvas2DRenderer implements IRenderer {
     car: Matter.Body,
     w: number,
     top: number,
+    hudScale: number,
     rivals?: Matter.Body[],
     ghost?: { x: number; y: number; alpha: number },
   ): void {
     const pad = 12;
-    const mapW = Math.round(160 * this.hudScale);
-    const mapH = Math.round(100 * this.hudScale);
+    const mapW = Math.round(160 * hudScale);
+    const mapH = Math.round(100 * hudScale);
     const mapX = w - mapW - pad;
     const mapY = top;
 

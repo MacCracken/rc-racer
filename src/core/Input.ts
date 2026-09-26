@@ -95,6 +95,45 @@ export interface IInput {
 
 const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
 
+/**
+ * Merge several sources' input: each axis takes its strongest source, so an
+ * idle stick can't cancel a held key; the handbrake is on if any source says.
+ */
+export function mergeInputs(states: readonly InputState[]): InputState {
+  const out = neutralInput();
+  for (const s of states) {
+    out.throttle = Math.max(out.throttle, s.throttle);
+    out.brake = Math.max(out.brake, s.brake);
+    if (Math.abs(s.steer) > Math.abs(out.steer)) out.steer = s.steer;
+    out.handbrake = out.handbrake || s.handbrake;
+  }
+  return out;
+}
+
+/**
+ * Several devices driving one car — keyboard, gamepad, touch — so whichever
+ * the player picks up just works, even mid-race.
+ */
+export class CompositeInput implements IInput {
+  constructor(private readonly sources: readonly IInput[]) {}
+
+  sample(): InputState {
+    return mergeInputs(this.sources.map((s) => s.sample()));
+  }
+
+  attach(target: HTMLElement): void {
+    for (const s of this.sources) s.attach(target);
+  }
+
+  detach(): void {
+    for (const s of this.sources) s.detach();
+  }
+
+  setKeyMap(km: KeyMap): void {
+    for (const s of this.sources) s.setKeyMap(km);
+  }
+}
+
 /** Is `code` bound to any driving action? */
 export function isBound(km: KeyMap, code: string): boolean {
   return KEY_ACTIONS.some((a) => km[a].includes(code));

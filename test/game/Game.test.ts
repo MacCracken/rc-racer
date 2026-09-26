@@ -23,6 +23,8 @@ import { freshUpgrades, SLOTS } from "../../src/game/upgrades.ts";
 import type { Ghost } from "../../src/race/Ghost.ts";
 import type { ResultsView } from "../../src/ui/ui.ts";
 import { podiumBonus } from "../../src/game/economy.ts";
+import { GamepadInput, type PadLike } from "../../src/core/Gamepad.ts";
+import { viewScaleFor } from "../../src/game/Game.ts";
 import { currentLapTimeMs } from "../../src/race/RaceState.ts";
 
 /**
@@ -53,6 +55,8 @@ interface GameInternals {
   presentAudio(): void;
   showOpeningScreen(): void;
   lastResults: ResultsView | null;
+  gamepad: GamepadInput;
+  pollGamepad(): void;
 }
 
 /**
@@ -650,5 +654,40 @@ describe("Game — first launch", () => {
     const { g } = makeGame(0, prog);
     g.showOpeningScreen();
     expect(g.screen).toBe("menu");
+  });
+});
+
+describe("Game — gamepad and small screens", () => {
+  it("a gamepad's Start pauses and resumes a race, once per press", () => {
+    const { g } = makeGame();
+    let start = false;
+    const pad = (): PadLike => ({
+      connected: true,
+      axes: [0, 0],
+      buttons: Array.from({ length: 17 }, (_, i) => ({
+        pressed: i === 9 && start,
+        value: i === 9 && start ? 1 : 0,
+      })),
+    });
+    g.gamepad = new GamepadInput(() => [pad()]);
+    g.startRace();
+    start = true;
+    g.pollGamepad();
+    expect(g.paused).toBe(true);
+    g.pollGamepad(); // still held: no flicker
+    expect(g.paused).toBe(true);
+    start = false;
+    g.pollGamepad();
+    start = true;
+    g.pollGamepad();
+    expect(g.paused).toBe(false);
+  });
+
+  it("pulls the camera out on a phone, leaving desktop framing untouched", () => {
+    expect(viewScaleFor(1280, 720)).toBe(1);
+    expect(viewScaleFor(1024, 600)).toBe(1);
+    expect(viewScaleFor(844, 390)).toBeCloseTo(0.65, 9); // landscape phone
+    expect(viewScaleFor(390, 844)).toBeCloseTo(0.65, 9); // portrait
+    expect(viewScaleFor(200, 150)).toBe(0.5); // floor
   });
 });
