@@ -22,7 +22,7 @@ import {
   type Arena,
   type ArenaCar,
 } from "../physics/MatterCar.ts";
-import { RaceState } from "../race/RaceState.ts";
+import { currentLapTimeMs, RaceState } from "../race/RaceState.ts";
 import { makeDriver } from "../race/AiDriver.ts";
 import { tracks as DEFAULT_TRACKS } from "../track/tracks.ts";
 import type { TrackDef } from "../track/Track.ts";
@@ -47,7 +47,8 @@ import {
   ageMarks,
   type SkidState,
 } from "../core/SkidMarks.ts";
-import type { Ghost } from "../race/Ghost.ts";
+import { sampleGhost, type Ghost } from "../race/Ghost.ts";
+import { buildSplits, ghostTimeAt, type Splits } from "../race/Split.ts";
 import {
   CAR_LENGTH,
   CAR_WIDTH,
@@ -161,7 +162,11 @@ export class Game {
   private skid: SkidState;
   private audio: IAudio;
   private prevLap = 0;
+  /** The saved best-lap ghost for the current track (empty if none yet). */
   private ghost: Ghost = [];
+  /** `splits` indexes this ghost by distance; rebuilt when the chase changes. */
+  private splitsFor: Ghost | null = null;
+  private splits: Splits = { s: [], t: [] };
   /**
    * Frame time (rAF ms) the finish confetti started, or null for none. Wall
    * clock, not the race clock: the sim (and its clock) stops at the finish.
@@ -487,7 +492,7 @@ export class Game {
     const prevP: Vec2 = { x: p.body.position.x, y: p.body.position.y };
     this.lastInput = this.input.sample();
     this.stepBody(p, this.lastInput, dt);
-    this.playerRace.update(prevP, p.body.position);
+    this.playerRace.update(prevP, p.body.position, p.body.angle);
 
     // Tire-smoke trail: lay skids while the player slides, fade them over time.
     sampleDrift(this.skid, p.body, {
@@ -575,6 +580,8 @@ export class Game {
       bestLapGhost: this.playerRace.bestGhost,
       finished: true,
     });
+    // A new record replaces the ghost: show (and next time chase) that one.
+    this.ghost = this.prog.ghostFor(this.currentTrack().id);
     this.lastResults = {
       position: this.playerPosition(),
       total: this.arena.cars.length,
@@ -647,8 +654,52 @@ export class Game {
       // just peeks out around the panels.
       hud: this.screen === "race" || this.screen === "results",
       startClockMs: this.startClock(),
+      ...this.chaseView(),
     };
     this.renderer.render(scene);
+  }
+
+  /**
+   * The lap to chase: this race's best once it beats the saved record, else
+   * the saved record's ghost (empty until there is one).
+   */
+  private chaseGhost(): Ghost {
+    const live = this.playerRace;
+    if (
+      live.bestGhost.length > 1 &&
+      live.bestLapMs < this.prog.bestLap(this.currentTrack().id)
+    )
+      return live.bestGhost;
+    return this.ghost;
+  }
+
+  /**
+   * The ghost car (replaying the chased lap in step with the player's lap
+   * clock) and the live split vs it — racing only, once the lights are green.
+   * The ghost waits on the line until the player moves, and fades out once
+   * its lap is done.
+   */
+  private chaseView(): Pick<RenderScene, "ghostCar" | "splitMs"> {
+    if (this.screen !== "race" || this.countdownMs > 0) return {};
+    const ghost = this.chaseGhost();
+    const lapMs = currentLapTimeMs(this.playerRace, this.clockMs);
+    const pose = sampleGhost(ghost, lapMs);
+    if (ghost.length < 2 || pose === null) return {};
+    const over = lapMs - ghost[ghost.length - 1].t;
+    const alpha = Math.max(0, Math.min(1, 1 - over / 1000));
+    if (this.splitsFor !== ghost) {
+      const race = this.playerRace;
+      this.splits = buildSplits(ghost, (q) => race.arcOf(q), race.lapLength);
+      this.splitsFor = ghost;
+    }
+    const at = ghostTimeAt(
+      this.splits,
+      this.playerRace.lapProgress(this.arena.cars[0]!.body.position),
+    );
+    return {
+      ghostCar: { ...pose, alpha },
+      splitMs: lapMs > 0 && at !== null ? lapMs - at : undefined,
+    };
   }
 
   /**

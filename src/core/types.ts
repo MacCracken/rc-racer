@@ -49,6 +49,10 @@ export interface RenderScene {
   controls?: CarControls;
   /** Each rival's live controls, aligned with `rivals`. */
   rivalControls?: CarControls[];
+  /** The ghost car replaying the lap being chased, faded by `alpha` (0..1). */
+  ghostCar?: { x: number; y: number; heading: number; alpha: number };
+  /** Live split vs that lap (ms): negative = ahead of it, positive = behind. */
+  splitMs?: number;
   /**
    * ms relative to the start signal: negative while the start countdown runs
    * (e.g. -2400 = 2.4 s to GO), then time since GO. Drives the start lights;

@@ -66,6 +66,27 @@ describe("Ghost — best-lap record + replay", () => {
     expect(g[0].heading).toBeCloseTo(Math.PI / 2, 6);
   });
 
+  it("keeps the body heading when a sample has one (a drift points off-line)", () => {
+    const g = recordLap(
+      [
+        { ms: 0, x: 0, y: 0, dx: 1, dy: 0, heading: Math.PI / 2 },
+        { ms: 100, x: 1, y: 0, dx: 1, dy: 0, heading: Math.PI / 2 },
+      ],
+      0,
+    );
+    expect(g[0].heading).toBeCloseTo(Math.PI / 2, 9); // not 0, its travel
+  });
+
+  it("interpolates heading the short way round, never spinning through 0", () => {
+    const g = makeGhost([
+      { t: 0, x: 0, y: 0, heading: 3.0 },
+      { t: 100, x: 1, y: 0, heading: -3.0 }, // 0.28 rad on, across ±π
+    ]);
+    const mid = sampleGhost(g, 50)!;
+    expect(Math.cos(mid.heading)).toBeCloseTo(-1, 3); // ≈ ±π, not 0
+    expect(sampleGhost(g, 25)!.heading).toBeCloseTo(3.0 + 0.0708, 3);
+  });
+
   it("capGhost thins evenly to the cap, keeping both ends in order", () => {
     const long = makeGhost(
       Array.from({ length: 5000 }, (_, i) => ({

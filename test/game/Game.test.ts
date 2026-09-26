@@ -20,6 +20,8 @@ import {
 import { speedZoom, type Camera } from "../../src/core/Camera.ts";
 import { NullAudio } from "../../src/core/Audio.ts";
 import { freshUpgrades, SLOTS } from "../../src/game/upgrades.ts";
+import type { Ghost } from "../../src/race/Ghost.ts";
+import { currentLapTimeMs } from "../../src/race/RaceState.ts";
 
 /**
  * Director-level regressions: the Game wiring (screen flow, clicks, clock,
@@ -45,6 +47,7 @@ interface GameInternals {
   playerPosition(): number;
   renderScene(): void;
   pause(): void;
+  chaseGhost(): Ghost;
 }
 
 /**
@@ -470,5 +473,58 @@ describe("Game — pause", () => {
     click(g, { "data-action": "toggle-sound" });
     expect(g.paused).toBe(true);
     expect(uiRoot.innerHTML).toContain('data-action="resume"');
+  });
+});
+
+describe("Game — chasing your best lap", () => {
+  it("shows no ghost car or split before the track has a record", () => {
+    const { g, lastScene } = makeGame();
+    g.startRace();
+    autopilot(g);
+    run(g, 5);
+    g.renderScene();
+    expect(lastScene()?.ghostCar).toBeUndefined();
+    expect(lastScene()?.splitMs).toBeUndefined();
+  });
+
+  it("replays the record as a ghost car: re-driving that lap splits ~0", () => {
+    const { g, lastScene } = makeGame();
+    g.startRace();
+    autopilot(g);
+    runToFinish(g);
+    const times = g.playerRace.lapTimesMs;
+    const recordLap = times.indexOf(Math.min(...times));
+
+    // The same car and autopilot drive the identical race again; halfway
+    // through the record lap, the ghost should be right on top of the car.
+    g.startRace();
+    autopilot(g);
+    const lapMs = () => currentLapTimeMs(g.playerRace, g.clockMs);
+    while (g.playerRace.lap < recordLap || lapMs() < times[recordLap] / 2)
+      g.onStep(FIXED_DT);
+    g.renderScene();
+    const scene = lastScene()!;
+    const car = g.arena.cars[0].body.position;
+    expect(scene.ghostCar).toBeDefined();
+    expect(scene.ghostCar!.alpha).toBe(1);
+    expect(
+      Math.hypot(scene.ghostCar!.x - car.x, scene.ghostCar!.y - car.y),
+    ).toBeLessThan(8);
+    expect(Math.abs(scene.splitMs!)).toBeLessThan(40);
+  });
+
+  it("switches the chase to this race's best once it beats the saved record", () => {
+    const prog = Progression.fresh();
+    prog.data.bestLaps.overture = 10 * 60_000; // a very slow saved record
+    prog.data.bestGhosts.overture = [
+      { t: 0, x: 0, y: 0, heading: 0 },
+      { t: 600_000, x: 1, y: 0, heading: 0 },
+    ];
+    const { g } = makeGame(0, prog);
+    g.startRace();
+    expect(g.chaseGhost()).toBe(prog.data.bestGhosts.overture);
+    autopilot(g);
+    while (g.playerRace.lap < 1) g.onStep(FIXED_DT);
+    expect(g.chaseGhost()).toBe(g.playerRace.bestGhost);
   });
 });

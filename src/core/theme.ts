@@ -30,6 +30,19 @@ export function carPalette(mode: ColorMode): CarPalette {
   return { player: "#f5c542", nose: "#ffe9a8", rival: "#4aa3ff" };
 }
 
+/**
+ * Split colours (ahead of / behind the ghost). The sign carries the meaning;
+ * colour backs it up, and `cb` swaps the red–green pair for blue–orange.
+ */
+export function splitColors(mode: ColorMode): {
+  ahead: string;
+  behind: string;
+} {
+  return mode === "cb"
+    ? { ahead: "#5fb4ff", behind: "#ffae42" }
+    : { ahead: "#7dff9b", behind: "#ff6b5a" };
+}
+
 /** Body style a car class is drawn with (see `core/carArt.ts`). */
 export type CarLook = "sedan" | "buggy" | "brawler";
 

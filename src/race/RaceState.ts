@@ -1,5 +1,5 @@
 import { type Vec2, segmentsIntersect } from "../core/vec.ts";
-import { recordLap, type Ghost } from "./Ghost.ts";
+import { recordLap, type Ghost, type LapSample } from "./Ghost.ts";
 import type { BuiltTrack } from "../track/Track.ts";
 import { GATE_SUBSTEPS, GATE_TOLERANCE } from "../core/tuning.ts";
 
@@ -65,13 +65,7 @@ export class RaceState {
   /** The car's best-lap pose timeline, for a ghost the player can chase. */
   bestGhost: Ghost = [];
   /** Raw per-step pose samples for the lap in progress; promoted on a new best. */
-  private lapSamples: {
-    ms: number;
-    x: number;
-    y: number;
-    dx: number;
-    dy: number;
-  }[] = [];
+  private lapSamples: LapSample[] = [];
   /** Clock time of the last recorded lap sample (samples are throttled). */
   private lastSampleMs = -Infinity;
   lapTimesMs: number[] = [];
@@ -82,9 +76,10 @@ export class RaceState {
   private started = false;
   /** Cumulative centerline arc length at each centerline point. */
   private readonly arc: number[];
-  /** Arc length of each gate, and of one full lap, for `progress`. */
+  /** Arc length of each gate, for `progress`. */
   private readonly gateArc: number[];
-  private readonly lapLength: number;
+  /** Length of one lap along the centerline (px). */
+  readonly lapLength: number;
 
   constructor(
     private readonly track: BuiltTrack,
@@ -109,8 +104,13 @@ export class RaceState {
     this.gateArc = track.gates.map((g) => arcPosition(cl, this.arc, g.center));
   }
 
-  /** Feed the car's previous + current world position each fixed step. */
-  update(prev: Vec2, cur: Vec2): void {
+  /**
+   * Feed the car's previous + current world position each fixed step, and
+   * optionally its body heading (rad) — recorded into the best-lap ghost so a
+   * replay faces the way the car did, even mid-drift. Without it the ghost
+   * faces along its direction of travel.
+   */
+  update(prev: Vec2, cur: Vec2, heading?: number): void {
     if (this.finished) return;
     // Hold the lap clock at zero while the car is still parked on the grid, so
     // the first lap is timed from the moment it moves, not from race start.
@@ -131,6 +131,7 @@ export class RaceState {
         y: cur.y,
         dx: cur.x - prev.x,
         dy: cur.y - prev.y,
+        heading,
       });
       this.lastSampleMs = ms;
     }
@@ -208,6 +209,14 @@ export class RaceState {
    * start line can't make it look a lap up (or down).
    */
   progress(pos: Vec2): number {
+    return this.lap * this.lapLength + this.lapProgress(pos);
+  }
+
+  /**
+   * Distance (px) into the current lap, 0 at the start line — `progress`
+   * without the completed laps. Same gate-capping, so it can't jump ahead.
+   */
+  lapProgress(pos: Vec2): number {
     const G = this.gateArc.length;
     const L = this.lapLength;
     if (G === 0 || L === 0) return 0;
@@ -216,7 +225,12 @@ export class RaceState {
     const to = last === G - 1 ? L : this.gateArc[last + 1];
     let ds = arcPosition(this.track.centerLine, this.arc, pos) - from;
     ds -= L * Math.round(ds / L); // wrap into [-L/2, L/2]
-    return this.lap * L + from + Math.max(0, Math.min(to - from, ds));
+    return from + Math.max(0, Math.min(to - from, ds));
+  }
+
+  /** Raw arc position (px from the start line, 0..lapLength) nearest `p`. */
+  arcOf(p: Vec2): number {
+    return arcPosition(this.track.centerLine, this.arc, p);
   }
 }
 
@@ -229,6 +243,11 @@ export function formatLap(ms: number): string {
   const mm = totalMs % 1000;
   const pad = (n: number, w: number) => String(n).padStart(w, "0");
   return `${m}:${pad(s, 2)}.${pad(mm, 3)}`;
+}
+
+/** A split as a signed seconds delta: "+0.31" behind, "−0.42" ahead. */
+export function formatSplit(ms: number): string {
+  return `${ms < 0 ? "−" : "+"}${(Math.abs(ms) / 1000).toFixed(2)}`;
 }
 
 /** ms into the current lap for the HUD (live). */

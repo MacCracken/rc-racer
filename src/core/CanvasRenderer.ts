@@ -12,11 +12,12 @@ import {
   GO_FLASH_MS,
   KMH_PER_PX_S,
 } from "./tuning.ts";
-import { formatLap, currentLapTimeMs } from "../race/RaceState.ts";
+import { formatLap, formatSplit, currentLapTimeMs } from "../race/RaceState.ts";
 import {
   carPalette,
   hudScaleOf,
   shade,
+  splitColors,
   type CarLook,
   type ColorMode,
   type HudSize,
@@ -98,20 +99,16 @@ export class Canvas2DRenderer implements IRenderer {
       track,
       car,
       race,
-      speed,
-      nowMs,
       rivals,
-      position,
-      total,
       skidMarks,
       ghost,
       confettiAgeMs,
-      fps,
       hud = true,
       look = "sedan",
       rivalLook = look,
       controls = IDLE,
       rivalControls = [],
+      ghostCar,
       startClockMs,
     } = scene;
     const w = this.canvas.width / this.dpr;
@@ -122,6 +119,7 @@ export class Canvas2DRenderer implements IRenderer {
     this.drawTrackArt(track, camera);
     this.drawSkidMarks(skidMarks, camera);
     this.drawGhost(ghost, camera);
+    if (ghostCar !== undefined) this.drawGhostCar(ghostCar, look, camera);
     if (hud) this.drawNextGate(track, camera, race);
     this.drawCars(
       car,
@@ -133,21 +131,7 @@ export class Canvas2DRenderer implements IRenderer {
       camera,
     );
     this.drawVignette(w, h);
-    if (hud)
-      this.drawHUD(
-        track.def.name,
-        race,
-        track,
-        speed,
-        nowMs,
-        w,
-        h,
-        position,
-        total,
-        car,
-        fps,
-        rivals,
-      );
+    if (hud) this.drawHUD(scene, w, h);
     if (confettiAgeMs !== undefined && confettiAgeMs >= 0) {
       this.drawConfetti(this.ctx, w, h, confettiAgeMs);
     }
@@ -281,6 +265,29 @@ export class Canvas2DRenderer implements IRenderer {
       }
     }
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /** The chased lap's car: a pale, see-through copy of the player's car. */
+  private drawGhostCar(
+    g: { x: number; y: number; heading: number; alpha: number },
+    look: CarLook,
+    cam: Camera,
+  ): void {
+    if (g.alpha <= 0) return;
+    const { ctx } = this;
+    const p = cam.toScreen(g);
+    ctx.save();
+    ctx.globalAlpha = 0.55 * g.alpha;
+    ctx.translate(p.x, p.y);
+    ctx.rotate(g.heading);
+    ctx.scale(cam.zoom, cam.zoom);
+    paintCar(ctx, look, {
+      body: "#dff4ff",
+      accent: "#7fd3ff",
+      steer: 0,
+      braking: false,
+    });
     ctx.restore();
   }
 
@@ -422,20 +429,9 @@ export class Canvas2DRenderer implements IRenderer {
 
   // --- screen-space HUD ---
 
-  private drawHUD(
-    trackName: string,
-    race: RaceState,
-    track: BuiltTrack,
-    speed: number,
-    nowMs: number,
-    w: number,
-    h: number,
-    position?: number,
-    total?: number,
-    car?: Matter.Body,
-    fps?: number,
-    rivals?: Matter.Body[],
-  ): void {
+  private drawHUD(scene: RenderScene, w: number, h: number): void {
+    const { race, track, speed, nowMs, position, total, car, fps, rivals } =
+      scene;
     const { ctx } = this;
     const s = this.hudScale;
     const pad = 12;
@@ -468,11 +464,22 @@ export class Canvas2DRenderer implements IRenderer {
       [`NOW ${formatLap(cur)}`, "NOW 00:00.000"],
     ];
     let x = pad;
+    let nowX = pad;
     for (const [text, widest] of cols) {
+      nowX = x;
       ctx.fillText(text, x, row1);
       x += ctx.measureText(widest).width + 24 * s;
     }
-    ctx.fillText(trackName, pad, row2);
+    ctx.fillText(track.def.name, pad, row2);
+    // Live split vs the ghost, under the lap timer it qualifies.
+    if (scene.splitMs !== undefined) {
+      const c = splitColors(this.colorMode);
+      ctx.font = `bold ${16 * s}px system-ui, sans-serif`;
+      ctx.fillStyle = scene.splitMs < 0 ? c.ahead : c.behind;
+      ctx.fillText(formatSplit(scene.splitMs), nowX, row2);
+      ctx.font = font;
+      ctx.fillStyle = "#fff";
+    }
 
     // Position + FPS, right-aligned in the bar (the minimap sits below it).
     ctx.textAlign = "right";
@@ -497,7 +504,8 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.fillText(`SPD ${kmh} km/h`, boxX + 10 * s, boxY + 13 * s);
 
     // minimap top-right, under the bar
-    if (car) this.drawMinimap(ctx, track, car, w, barH + pad, rivals);
+    if (car)
+      this.drawMinimap(ctx, track, car, w, barH + pad, rivals, scene.ghostCar);
 
     ctx.restore();
   }
@@ -509,6 +517,7 @@ export class Canvas2DRenderer implements IRenderer {
     w: number,
     top: number,
     rivals?: Matter.Body[],
+    ghost?: { x: number; y: number; alpha: number },
   ): void {
     const pad = 12;
     const mapW = Math.round(160 * this.hudScale);
@@ -589,6 +598,23 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.strokeStyle = "#000";
     ctx.lineWidth = 1;
     for (const r of rivals ?? []) dot(r, pal.rival, 2.5);
+    // The ghost: a hollow ring, so it never hides (or reads as) a car.
+    if (ghost !== undefined && ghost.alpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = ghost.alpha;
+      ctx.strokeStyle = "#dff4ff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(
+        offX + ghost.x * scale,
+        offY + ghost.y * scale,
+        3.5,
+        0,
+        Math.PI * 2,
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
     dot(car, pal.player, 3.5);
   }
 
