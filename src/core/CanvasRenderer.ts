@@ -65,12 +65,16 @@ export class Canvas2DRenderer implements IRenderer {
   private colorMode: ColorMode = "std";
   private hudScale = 1;
   private art: TrackArt | null = null;
+  /** The ground texture tile, per background colour (art + screen share it). */
+  private groundTile: { color: string; tile: HTMLCanvasElement } | null = null;
   private ground: { color: string; pattern: CanvasPattern } | null = null;
-  private vignette: { w: number; h: number; fill: CanvasGradient } | null =
-    null;
+  /** The vignette, pre-shaded once per canvas size (see `drawVignette`). */
+  private vignette: HTMLCanvasElement | null = null;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
-    const ctx = canvas.getContext("2d");
+    // Opaque: every frame paints every pixel, so the browser needn't blend
+    // the canvas with the page behind it.
+    const ctx = canvas.getContext("2d", { alpha: false });
     if (ctx === null) throw new Error("2D context unavailable");
     this.ctx = ctx;
   }
@@ -115,8 +119,9 @@ export class Canvas2DRenderer implements IRenderer {
     const h = this.canvas.height / this.dpr;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
-    this.drawGround(track, camera, w, h);
-    this.drawTrackArt(track, camera);
+    const art = this.trackArt(track, camera);
+    this.drawGround(track, camera, w, h, art);
+    this.drawTrackArt(art, camera);
     this.drawSkidMarks(skidMarks, camera);
     this.drawGhost(ghost, camera);
     if (ghostCar !== undefined) this.drawGhostCar(ghostCar, look, camera);
@@ -147,20 +152,37 @@ export class Canvas2DRenderer implements IRenderer {
     return c;
   }
 
-  /** Textured ground, locked to world space so it scrolls with the track. */
+  /** The ground's texture tile for a background colour (cached). */
+  private groundTileFor(color: string): HTMLCanvasElement | null {
+    if (this.groundTile?.color !== color) {
+      const tile = this.makeCanvas(GROUND_TILE, GROUND_TILE);
+      const g = tile.getContext("2d");
+      if (g === null) return null;
+      paintGroundTile(g, GROUND_TILE, color);
+      this.groundTile = { color, tile };
+    }
+    return this.groundTile.tile;
+  }
+
+  /**
+   * Textured ground, locked to world space so it scrolls with the track. The
+   * track art has this same ground baked in (see `paintArt`), so only the
+   * screen outside the art's rectangle is filled here — usually none of it.
+   * A full-screen pattern fill every frame was the costliest pass of all
+   * when the browser rasterizes in software.
+   */
   private drawGround(
     track: BuiltTrack,
     cam: Camera,
     w: number,
     h: number,
+    art: TrackArt | null,
   ): void {
     const { ctx } = this;
     const color = track.def.background ?? "#0d1f14";
     if (this.ground?.color !== color) {
-      const tile = this.makeCanvas(GROUND_TILE, GROUND_TILE);
-      const g = tile.getContext("2d");
-      if (g !== null) paintGroundTile(g, GROUND_TILE, color);
-      const pattern = g === null ? null : ctx.createPattern(tile, "repeat");
+      const tile = this.groundTileFor(color);
+      const pattern = tile === null ? null : ctx.createPattern(tile, "repeat");
       this.ground = pattern === null ? null : { color, pattern };
     }
     if (this.ground === null) {
@@ -180,16 +202,37 @@ export class Canvas2DRenderer implements IRenderer {
       ]),
     );
     ctx.fillStyle = this.ground.pattern;
-    ctx.fillRect(0, 0, w, h);
+    const tl = art === null ? null : cam.toScreen({ x: art.x, y: art.y });
+    if (art === null || tl === null) {
+      ctx.fillRect(0, 0, w, h);
+      return;
+    }
+    const aw = (art.canvas.width / art.scale) * cam.zoom;
+    const ah = (art.canvas.height / art.scale) * cam.zoom;
+    if (tl.x >= w || tl.y >= h || tl.x + aw <= 0 || tl.y + ah <= 0) {
+      ctx.fillRect(0, 0, w, h);
+      return;
+    }
+    // The bands around the art, reaching 1px under its edge so no hairline
+    // can open up at the seam (the art is drawn over the overlap).
+    const x0 = Math.max(0, Math.min(w, tl.x + 1));
+    const y0 = Math.max(0, Math.min(h, tl.y + 1));
+    const x1 = Math.max(0, Math.min(w, tl.x + aw - 1));
+    const y1 = Math.max(0, Math.min(h, tl.y + ah - 1));
+    if (y0 > 0) ctx.fillRect(0, 0, w, y0);
+    if (y1 < h) ctx.fillRect(0, y1, w, h - y1);
+    if (x0 > 0) ctx.fillRect(0, y0, x0, y1 - y0);
+    if (x1 < w) ctx.fillRect(x1, y0, w - x1, y1 - y0);
   }
 
   /**
-   * Blit the pre-painted track. It is painted once per track, at about one
-   * canvas pixel per device pixel for the *closest* zoom the camera reaches,
-   * so the per-frame speed zoom never triggers a repaint. It only repaints
-   * for a new track or when it needs more resolution (e.g. a sharper screen).
+   * The pre-painted track (ground included). It is painted once per track,
+   * at about one canvas pixel per device pixel for the *closest* zoom the
+   * camera reaches, so the per-frame speed zoom never triggers a repaint. It
+   * only repaints for a new track or when it needs more resolution (e.g. a
+   * sharper screen).
    */
-  private drawTrackArt(track: BuiltTrack, cam: Camera): void {
+  private trackArt(track: BuiltTrack, cam: Camera): TrackArt | null {
     const b = track.bounds;
     const worldW = b.maxX - b.minX + ART_MARGIN * 2;
     const worldH = b.maxY - b.minY + ART_MARGIN * 2;
@@ -207,7 +250,11 @@ export class Canvas2DRenderer implements IRenderer {
       const scale = Math.min(cap, Math.ceil(want * 4) / 4);
       this.art = this.paintArt(track, id, scale, worldW, worldH);
     }
-    const art = this.art;
+    return this.art;
+  }
+
+  /** Blit the track art into place for this camera. */
+  private drawTrackArt(art: TrackArt | null, cam: Camera): void {
     if (art === null) return;
     const p = cam.toScreen({ x: art.x, y: art.y });
     this.ctx.drawImage(
@@ -232,7 +279,7 @@ export class Canvas2DRenderer implements IRenderer {
       Math.ceil(worldW * scale),
       Math.ceil(worldH * scale),
     );
-    const g = canvas.getContext("2d");
+    const g = canvas.getContext("2d", { alpha: false });
     if (g === null) return null;
     const tile = this.makeCanvas(96, 96);
     const tg = tile.getContext("2d");
@@ -240,6 +287,14 @@ export class Canvas2DRenderer implements IRenderer {
     if (tg !== null) paintAsphaltTile(tg, 96, surface);
     const asphalt = (tg && g.createPattern(tile, "repeat")) ?? surface;
     g.setTransform(scale, 0, 0, scale, -x * scale, -y * scale);
+    // The ground first, anchored to the world like the live ground, so the
+    // two meet seamlessly at the art's edge. Over-filled a little: the canvas
+    // size was rounded up, and an unpainted opaque pixel is black.
+    const color = track.def.background ?? "#0d1f14";
+    const groundTile = this.groundTileFor(color);
+    g.fillStyle =
+      (groundTile && g.createPattern(groundTile, "repeat")) ?? color;
+    g.fillRect(x, y, worldW + 2, worldH + 2);
     paintTrackArt(g, track, asphalt, sceneryFor(track));
     return { id, canvas, x, y, scale };
   }
@@ -407,24 +462,34 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.restore();
   }
 
-  /** Darken the screen edges a touch, pulling the eye to the action. */
+  /**
+   * Darken the screen edges a touch, pulling the eye to the action. Shading
+   * a radial gradient across the screen every frame was a costly pass on a
+   * software-rasterized canvas; it's shaded once per canvas size into an
+   * offscreen canvas at device resolution and blitted 1:1.
+   */
   private drawVignette(w: number, h: number): void {
-    const { ctx } = this;
-    if (this.vignette?.w !== w || this.vignette.h !== h) {
-      const fill = ctx.createRadialGradient(
-        w / 2,
-        h / 2,
-        Math.min(w, h) * 0.35,
-        w / 2,
-        h / 2,
-        Math.hypot(w, h) * 0.62,
+    const { width, height } = this.canvas;
+    let v = this.vignette;
+    if (v === null || v.width !== width || v.height !== height) {
+      v = this.makeCanvas(width, height);
+      const g = v.getContext("2d");
+      if (g === null) return;
+      const fill = g.createRadialGradient(
+        width / 2,
+        height / 2,
+        Math.min(width, height) * 0.35,
+        width / 2,
+        height / 2,
+        Math.hypot(width, height) * 0.62,
       );
       fill.addColorStop(0, "rgba(0,0,0,0)");
       fill.addColorStop(1, "rgba(0,0,0,0.4)");
-      this.vignette = { w, h, fill };
+      g.fillStyle = fill;
+      g.fillRect(0, 0, width, height);
+      this.vignette = v;
     }
-    ctx.fillStyle = this.vignette.fill;
-    ctx.fillRect(0, 0, w, h);
+    this.ctx.drawImage(v, 0, 0, w, h);
   }
 
   // --- screen-space HUD ---
