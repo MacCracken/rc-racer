@@ -5,3 +5,6 @@ coverage
 *.local
 .vite
 scripts/_*
+test-results
+playwright-report
+blob-report

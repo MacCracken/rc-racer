@@ -30,6 +30,7 @@ enabled"; CI and the game are unaffected.
 ```bash
 npm run build
 npm run preview    # serves dist/ at http://localhost:4173
+npm run e2e        # builds, then the browser smoke tests (Playwright)
 ```
 
 ## First-run video

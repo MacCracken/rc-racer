@@ -2,3 +2,6 @@ dist
 node_modules
 scripts/_*
 .qwen
+test-results
+playwright-report
+blob-report
