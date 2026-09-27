@@ -17,6 +17,8 @@ body {
   display: block;
   position: absolute;
   inset: 0;
+  /* A finger on the track is driving, not panning or zooming the page. */
+  touch-action: none;
 }
 
 /* ---------------------------------------------------------------- UI layer */
@@ -182,6 +184,37 @@ body {
   margin-top: 18px;
   font-size: 12px;
   color: #8a9e92;
+}
+
+.track-meta b {
+  color: #ffe9a8;
+  font-weight: 600;
+}
+
+/* The menu's actions stay pinned to the bottom of the window while the car
+   and track lists scroll, so Start is never below the fold on a short
+   laptop screen. Negative margins run it to the panel's edges. */
+.menu-footer {
+  position: sticky;
+  bottom: -16px; /* #ui's bottom padding: sit flush with the window edge */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 18px -32px -28px;
+  padding: 14px 32px 18px;
+  background: rgba(8, 14, 11, 0.97);
+  border-top: 1px solid #2a3830;
+  border-radius: 0 0 16px 16px;
+}
+
+.menu-footer .primary {
+  margin-top: 0;
+}
+
+.menu-footer .hint {
+  flex-basis: 100%;
+  margin-top: 2px;
 }
 
 button {
@@ -459,6 +492,18 @@ button {
   margin: 12px 0 4px;
 }
 
+.reward-parts {
+  font-size: 13px;
+  color: #9fb4a8;
+  margin: 0 0 8px;
+}
+
+.result-record {
+  font-size: 14px;
+  color: #cfe0d6;
+  margin: 8px 0;
+}
+
 .new-record {
   color: #ffe9a8;
   font-weight: 700;
@@ -534,6 +579,35 @@ button {
   pointer-events: auto;
 }
 
+/* PAUSE ------------------------------------------------------------------ */
+/* A small card over the frozen race; the canvas keeps drawing behind it. */
+.screen-pause {
+  width: min(380px, 92vw);
+}
+
+.pause-panel {
+  text-align: center;
+}
+
+.pause-title {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #ffe9a8;
+  margin: 4px 0 16px;
+}
+
+.pause-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pause-actions button {
+  margin-top: 0;
+  width: 100%;
+}
+
 /* SETTINGS --------------------------------------------------------------- */
 .screen-settings {
   background: rgba(8, 14, 11, 0.86);
@@ -604,4 +678,184 @@ button {
   justify-content: flex-end;
   gap: 12px;
   margin-top: 8px;
+}
+
+/* TOUCH ------------------------------------------------------------------ */
+/* On-screen driving controls (core/TouchInput.ts). Hidden unless the main
+   pointer is a finger, so desktops never see them. */
+.touch-controls,
+.touch-only {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .touch-controls,
+  .touch-only {
+    display: block;
+  }
+
+  .no-touch,
+  .race-hint {
+    display: none;
+  }
+
+  /* Menu / Pause / Sound move up under the HUD, out from under the thumbs,
+     stacked down the left so they clear the minimap on a narrow phone. */
+  .race-controls {
+    top: 56px;
+    bottom: auto;
+    left: 10px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+.touch-steer,
+.touch-pedals {
+  position: fixed;
+  display: flex;
+  gap: 14px;
+  pointer-events: auto;
+}
+
+.touch-steer {
+  left: calc(18px + env(safe-area-inset-left));
+  bottom: calc(18px + env(safe-area-inset-bottom));
+}
+
+/* Raised to clear the speedometer the canvas draws bottom-right. */
+.touch-pedals {
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  align-items: flex-end;
+}
+
+.touch-btn {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 14, 11, 0.45);
+  border: 2px solid rgba(207, 238, 221, 0.45);
+  color: #e8f4ee;
+  font:
+    700 22px system-ui,
+    sans-serif;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.touch-btn.held {
+  background: rgba(125, 255, 155, 0.35);
+  border-color: #7dff9b;
+}
+
+.touch-pedals .touch-btn {
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
+.touch-pedals .touch-gas {
+  width: 92px;
+  height: 92px;
+}
+
+.touch-pedals .touch-drift {
+  width: 62px;
+  height: 62px;
+  align-self: flex-start;
+}
+
+/* A narrow phone held upright: smaller buttons, so the steering and pedal
+   clusters don't meet in the middle. */
+@media (hover: none) and (pointer: coarse) and (max-width: 500px) {
+  .touch-steer {
+    gap: 12px;
+    left: calc(14px + env(safe-area-inset-left));
+  }
+
+  .touch-pedals {
+    gap: 10px;
+  }
+
+  .touch-btn {
+    width: 64px;
+    height: 64px;
+  }
+
+  .touch-pedals .touch-gas {
+    width: 76px;
+    height: 76px;
+  }
+
+  .touch-pedals .touch-drift {
+    width: 52px;
+    height: 52px;
+  }
+}
+
+/* NARROW SCREENS (phones) ------------------------------------------------- */
+@media (max-width: 700px) {
+  .screen-menu,
+  .screen-settings,
+  .onboarding-panel {
+    padding: 18px 16px;
+  }
+
+  .menu-footer {
+    margin: 14px -16px -18px;
+    padding: 12px 16px 14px;
+  }
+
+  .title {
+    font-size: 32px;
+    letter-spacing: 2px;
+  }
+
+  .onboarding-title,
+  .settings-title {
+    font-size: 24px;
+  }
+
+  .cols,
+  .garage-body {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .car-row,
+  .track-row {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .car-blurb {
+    max-width: none;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+
+  .panel-head {
+    font-size: 18px;
+    gap: 10px;
+  }
+
+  .setting-row.key-row .key-btn {
+    min-width: 0;
+  }
+
+  /* No room beside the race controls; the menu shows the same hint. */
+  .race-hint {
+    display: none;
+  }
+
+  .result-position {
+    font-size: 44px;
+  }
 }

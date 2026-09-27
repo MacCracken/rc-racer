@@ -22,16 +22,19 @@ export interface Settings {
   hudSize: HudSize;
   /** All game sound off. */
   muted: boolean;
+  /** How to Play has been seen, so first launch shows it once. */
+  onboarded: boolean;
 }
 
 /**
- * Keys the game itself answers to (R restarts, Esc / Q / Backspace go back to
- * the menu). Binding a driving action to one would fire both, e.g. a handbrake
- * on Q that also quits the race, so these are never rebindable.
+ * Keys the game itself answers to (R restarts, Esc / P pause, Q / Backspace
+ * go back to the menu). Binding a driving action to one would fire both, e.g.
+ * a handbrake on Q that also quits the race, so these are never rebindable.
  */
 export const RESERVED_CODES: readonly string[] = [
   "KeyR",
   "KeyQ",
+  "KeyP",
   "Escape",
   "Backspace",
 ];
@@ -46,7 +49,8 @@ export function defaultSettings(): Settings {
     colorMode: "std",
     hudSize: "md",
     muted: false,
-     };
+    onboarded: false,
+  };
 }
 
 /** Coerce arbitrary / older / corrupt payloads into a valid current `Settings`. */
@@ -57,11 +61,12 @@ export function migrateSettings(input: unknown): Settings {
   if (raw.keyMap !== undefined) s.keyMap = migrateKeyMap(raw.keyMap);
   if (raw.colorMode === "std" || raw.colorMode === "cb") {
     s.colorMode = raw.colorMode;
-     }
+  }
   if (raw.hudSize === "sm" || raw.hudSize === "md" || raw.hudSize === "lg") {
     s.hudSize = raw.hudSize;
-     }
+  }
   if (typeof raw.muted === "boolean") s.muted = raw.muted;
+  if (typeof raw.onboarded === "boolean") s.onboarded = raw.onboarded;
   return s;
 }
 
@@ -75,13 +80,13 @@ function migrateKeyMap(raw: unknown): KeyMap {
     const v = r[a];
     if (Array.isArray(v)) {
       const codes = v.filter(
-         (c): c is string =>
-           typeof c === "string" && c.length > 0 && !isReservedCode(c),
+        (c): c is string =>
+          typeof c === "string" && c.length > 0 && !isReservedCode(c),
       );
-        // A binding that lost every code reverts to its default for that action.
+      // A binding that lost every code reverts to its default for that action.
       out[a] = codes.length > 0 ? codes : base[a];
-       }
-     }
+    }
+  }
   return out;
 }
 
@@ -99,14 +104,14 @@ export function rebindSetting(
   code: string,
 ): Settings {
   if (isReservedCode(code)) return s;
-   // Strip `code` from every action first so it isn't left bound elsewhere.
+  // Strip `code` from every action first so it isn't left bound elsewhere.
   const kmc: KeyMap = {
     throttle: s.keyMap.throttle.filter((c) => c !== code),
     brake: s.keyMap.brake.filter((c) => c !== code),
     steerLeft: s.keyMap.steerLeft.filter((c) => c !== code),
     steerRight: s.keyMap.steerRight.filter((c) => c !== code),
     handbrake: s.keyMap.handbrake.filter((c) => c !== code),
-     };
+  };
   const freed = s.keyMap[action].filter((c) => c !== code);
   const orphan = KEY_ACTIONS.find(
     (a) => a !== action && s.keyMap[a].length > 0 && kmc[a].length === 0,

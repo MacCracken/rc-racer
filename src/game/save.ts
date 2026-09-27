@@ -32,7 +32,7 @@ export interface SaveData {
   selectedTrack: string;
   /** Tracks you've cleared at least once (progression gate). */
   clearedTracks: string[];
-    /** Persistent UI prefs: key bindings, colour-blind mode, HUD size. */
+  /** Persistent UI prefs: key bindings, colour-blind mode, HUD size. */
   settings: Settings;
 }
 
@@ -128,9 +128,8 @@ export function migrate(input: unknown): SaveData {
   if (ti === 0 || (ti > 0 && data.clearedTracks.includes(tracks[ti - 1].id))) {
     data.selectedTrack = tracks[ti].id;
   }
-   // UI prefs ride the same save; a legacy save that lacks them keeps defaults.
-  if (raw.settings !== undefined)
-    data.settings = migrateSettings(raw.settings);
+  // UI prefs ride the same save; a legacy save that lacks them keeps defaults.
+  if (raw.settings !== undefined) data.settings = migrateSettings(raw.settings);
   data.version = SAVE_VERSION;
   return data;
 }

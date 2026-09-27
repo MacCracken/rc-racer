@@ -18,6 +18,8 @@ export interface CarClass {
   cost: number;
   /** Body style the renderer draws this class with. */
   look: CarLook;
+  /** Engine pitch multiplier (1 = sedan): small motors whine, big ones growl. */
+  enginePitch?: number;
 }
 
 export const carClasses: CarClass[] = [
@@ -56,6 +58,7 @@ export const carClasses: CarClass[] = [
     },
     cost: 500,
     look: "buggy",
+    enginePitch: 1.3,
   },
   {
     id: "brawler",
@@ -75,6 +78,7 @@ export const carClasses: CarClass[] = [
     },
     cost: 1200,
     look: "brawler",
+    enginePitch: 0.78,
   },
 ];
 

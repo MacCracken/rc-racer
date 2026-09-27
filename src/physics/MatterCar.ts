@@ -79,20 +79,14 @@ function createCarBody(track: BuiltTrack, stats: CarStats, slot = 0): M.Body {
   // size so the band model stays consistent across builds.
   const mass = 1 + stats.maxSpeed / 1000;
   const p = gridSlot(track, slot);
-  const car = M.Bodies.rectangle(
-    p.x,
-    p.y,
-    CAR_LENGTH,
-    CAR_WIDTH,
-    {
-      label: "car",
-      mass,
-      frictionAir: 0,
-      friction: 0.1,
-      collisionFilter: { group: CAR_GROUP, category: CAT_CAR, mask: CAT_WALL },
-      render: { visible: false },
-    },
-  );
+  const car = M.Bodies.rectangle(p.x, p.y, CAR_LENGTH, CAR_WIDTH, {
+    label: "car",
+    mass,
+    frictionAir: 0,
+    friction: 0.1,
+    collisionFilter: { group: CAR_GROUP, category: CAT_CAR, mask: CAT_WALL },
+    render: { visible: false },
+  });
   M.Body.setAngle(car, p.heading);
   M.Body.setVelocity(car, { x: 0, y: 0 });
   return car;

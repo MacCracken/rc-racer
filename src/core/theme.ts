@@ -23,11 +23,24 @@ export interface CarPalette {
 }
 
 export function carPalette(mode: ColorMode): CarPalette {
-    // Orange vs blue is the canonical deuteranopia-safe pair; keep the default
-    // (amber vs blue) for the vivid standard look.
+  // Orange vs blue is the canonical deuteranopia-safe pair; keep the default
+  // (amber vs blue) for the vivid standard look.
   if (mode === "cb")
     return { player: "#ff7a18", nose: "#ffd8a8", rival: "#2e7de0" };
   return { player: "#f5c542", nose: "#ffe9a8", rival: "#4aa3ff" };
+}
+
+/**
+ * Split colours (ahead of / behind the ghost). The sign carries the meaning;
+ * colour backs it up, and `cb` swaps the red–green pair for blue–orange.
+ */
+export function splitColors(mode: ColorMode): {
+  ahead: string;
+  behind: string;
+} {
+  return mode === "cb"
+    ? { ahead: "#5fb4ff", behind: "#ffae42" }
+    : { ahead: "#7dff9b", behind: "#ff6b5a" };
 }
 
 /** Body style a car class is drawn with (see `core/carArt.ts`). */
@@ -60,9 +73,9 @@ export function hudScaleOf(size: HudSize): number {
       return 0.85;
     case "lg":
       return 1.2;
-      // md is the unchanged default.
-      default:
-        return 1;
+    // md is the unchanged default.
+    default:
+      return 1;
   }
 }
 

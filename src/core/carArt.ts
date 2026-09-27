@@ -96,7 +96,10 @@ function lights(
 }
 
 /** The ground shadow's footprint (the caller offsets + fills it). */
-export function traceCarShadow(g: CanvasRenderingContext2D, look: CarLook): void {
+export function traceCarShadow(
+  g: CanvasRenderingContext2D,
+  look: CarLook,
+): void {
   const halfW = look === "sedan" ? HW + 1 : HW + 3;
   rrect(g, -HL - 1, -halfW, CAR_LENGTH + 2, halfW * 2, 5);
 }
@@ -114,7 +117,11 @@ export function paintCar(
 }
 
 /** Street sedan: tucked-in wheels, glasshouse + roof, a centre stripe. */
-function paintSedan(g: CanvasRenderingContext2D, p: CarPaint, steer: number): void {
+function paintSedan(
+  g: CanvasRenderingContext2D,
+  p: CarPaint,
+  steer: number,
+): void {
   const wy = HW - 1.2;
   wheel(g, 9, -wy, 7, 3.6, steer);
   wheel(g, 9, wy, 7, 3.6, steer);
@@ -150,7 +157,11 @@ function paintSedan(g: CanvasRenderingContext2D, p: CarPaint, steer: number): vo
 }
 
 /** 1/10 buggy: outboard wheels on arms, slim tub, cockpit, big rear wing. */
-function paintBuggy(g: CanvasRenderingContext2D, p: CarPaint, steer: number): void {
+function paintBuggy(
+  g: CanvasRenderingContext2D,
+  p: CarPaint,
+  steer: number,
+): void {
   const wy = HW + 0.8;
   g.strokeStyle = "#262626"; // suspension arms
   g.lineWidth = 1.2;
@@ -214,7 +225,11 @@ function paintBuggy(g: CanvasRenderingContext2D, p: CarPaint, steer: number): vo
 }
 
 /** 1/8 brawler: wide truck body, flared fenders, cab + bed, bull bar. */
-function paintBrawler(g: CanvasRenderingContext2D, p: CarPaint, steer: number): void {
+function paintBrawler(
+  g: CanvasRenderingContext2D,
+  p: CarPaint,
+  steer: number,
+): void {
   const wy = HW + 1.2;
   wheel(g, 9.5, -wy, 8.6, 5, steer);
   wheel(g, 9.5, wy, 8.6, 5, steer);

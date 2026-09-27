@@ -100,8 +100,7 @@ export function sceneryFor(track: BuiltTrack): SceneryItem[] {
       const roll = rand();
       const kind: SceneryKind =
         roll < 0.34 ? "tires" : roll < 0.48 ? "cone" : "bush";
-      const r =
-        kind === "tires" ? 7 : kind === "cone" ? 4 : 10 + rand() * 12;
+      const r = kind === "tires" ? 7 : kind === "cone" ? 4 : 10 + rand() * 12;
       const gap =
         kind === "tires"
           ? 14 + rand() * 10

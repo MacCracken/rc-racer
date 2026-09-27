@@ -7,16 +7,11 @@
 import type { StatBar } from "../game/upgrades.ts";
 import type { RaceOutcome } from "../game/progression.ts";
 import { keyLabel, type ColorMode, type HudSize } from "../core/theme.ts";
-import { formatLap } from "../race/RaceState.ts";
+import { formatLap, formatSplit } from "../race/RaceState.ts";
 import { defaultKeyMap, type KeyAction, type KeyMap } from "../core/Input.ts";
 
 export type Screen =
-     | "menu"
-     | "garage"
-     | "race"
-     | "results"
-     | "onboarding"
-     | "settings";
+  "menu" | "garage" | "race" | "results" | "onboarding" | "settings";
 
 export interface CarRow {
   id: string;
@@ -36,11 +31,13 @@ export interface TrackRow {
   cleared: boolean;
   unlocked: boolean;
   selected: boolean;
-    /** Flavour line + rough difficulty for the menu (both optional). */
+  /** Flavour line + rough difficulty for the menu (both optional). */
   vibe?: string;
   difficulty?: number;
   /** Who you'll race there, e.g. "vs 1/10 Buggy +1". */
   rivals?: string;
+  /** Your best lap here, formatted, once you have one. */
+  bestLabel?: string;
 }
 
 export interface UpgradeRow {
@@ -72,6 +69,8 @@ export interface ResultsView {
   total: number;
   bestLapMs: number;
   outcome: RaceOutcome;
+  /** The track's par lap (ms), to explain the pace bonus. */
+  parMs?: number;
   /** Display name of `outcome.unlockedCar` (falls back to its id). */
   unlockedCarName?: string;
 }
@@ -89,7 +88,7 @@ export interface SettingsView {
   hudSize: HudSize;
   muted: boolean;
   bindings: BindRow[];
-    /** True while a key capture is pending, and which action is being set. */
+  /** True while a key capture is pending, and which action is being set. */
   rebinding: boolean;
   rebindingAction: string | null;
   /** Why the last key press was refused (e.g. a reserved key), if any. */
@@ -121,7 +120,7 @@ export function controlsHint(km: KeyMap): string {
     ? "WASD / arrows to drive"
     : `${keys("throttle")} gas · ${keys("brake")} brake · ` +
       `${keys("steerLeft")} left · ${keys("steerRight")} right`;
-  return `${drive} · ${keys("handbrake")} handbrake · R restart · Esc or Q to menu`;
+  return `${drive} · ${keys("handbrake")} handbrake · R restart · Esc pause · Q menu`;
 }
 
 const HUD_SIZE_LABEL: Record<HudSize, string> = {
@@ -143,45 +142,49 @@ const esc = (s: string): string =>
         return "&quot;";
       default:
         return c;
-      }
-    });
+    }
+  });
 
 // --- MENU ------------------------------------------------------------------
 
 export function menuHtml(m: UiModel): string {
   const cars = m.cars
-      .map((c) => {
-        const cls = ["car-row", c.selected && "selected", !c.owned && "not-owned"]
-           .filter(Boolean)
-           .join(" ");
-        const cost = c.owned ? "" : `<span class="cost">${c.cost} cr</span>`;
-        return `
+    .map((c) => {
+      const cls = ["car-row", c.selected && "selected", !c.owned && "not-owned"]
+        .filter(Boolean)
+        .join(" ");
+      const cost = c.owned ? "" : `<span class="cost">${c.cost} cr</span>`;
+      return `
           <button class="${cls}" data-selectcar="${c.id}">
            <span class="car-name">${esc(c.name)}</span>
            <span class="car-class">${esc(c.classLabel)}</span>
            <span class="car-blurb">${esc(c.blurb)}</span>
            ${cost}
           </button>`;
-        })
-      .join("");
+    })
+    .join("");
 
   const tracks = m.tracks
-      .map((t) => {
-        const locked = !t.unlocked;
-        const cls = ["track-row", t.selected && "selected", locked && "locked"]
-           .filter(Boolean)
-           .join(" ");
-        const clear = t.cleared ? " ✓" : "";
-        const about = [t.vibe, t.rivals].filter(Boolean).map((s) => esc(s!)).join(" · ");
-        return `
+    .map((t) => {
+      const locked = !t.unlocked;
+      const cls = ["track-row", t.selected && "selected", locked && "locked"]
+        .filter(Boolean)
+        .join(" ");
+      const clear = t.cleared ? " ✓" : "";
+      const about = [t.vibe, t.rivals]
+        .filter(Boolean)
+        .map((s) => esc(s!))
+        .join(" · ");
+      return `
           <button class="${cls}" data-selecttrack="${t.id}"${locked ? " disabled" : ""}>
            <span class="track-name">${esc(t.name)}</span>
-           <span class="track-meta">${t.laps} laps · par ${esc(t.parLabel)}${t.difficulty !== undefined ? " · " + "●".repeat(t.difficulty) : ""}${clear}</span>
+           <span class="track-meta">${t.laps} laps · par ${esc(t.parLabel)}${t.bestLabel ? ` · best <b>${esc(t.bestLabel)}</b>` : ""}${t.difficulty !== undefined ? " · " + "●".repeat(t.difficulty) : ""}${clear}</span>
            ${about ? `<span class="track-about">${about}</span>` : ""}
           </button>`;
-        })
-      .join("");
+    })
+    .join("");
 
+  const selected = m.tracks.find((t) => t.selected);
   return `
     <div class="screen screen-menu">
       <div class="title">RC RACER</div>
@@ -195,14 +198,14 @@ export function menuHtml(m: UiModel): string {
         <div class="col">
           <div class="col-head">TRACKS</div>
           ${tracks}
-          <button class="primary" data-action="start">Start race</button>
         </div>
       </div>
-      <div class="hint">${esc(controlsHint(m.keyMap))}</div>
-      <div class="menu-actions">
-        <button class="ghost" data-action="garage">Open garage</button>
+      <div class="menu-footer">
+        <button class="primary" data-action="start">▶ Start race${selected ? ` · ${esc(selected.name)}` : ""}</button>
+        <button class="ghost" data-action="garage">Garage</button>
         <button class="ghost" data-action="howto">How to Play</button>
         <button class="ghost" data-action="settings">Settings</button>
+        <div class="hint">${esc(controlsHint(m.keyMap))}</div>
       </div>
     </div>`;
 }
@@ -211,31 +214,31 @@ export function menuHtml(m: UiModel): string {
 
 export function garageHtml(m: UiModel): string {
   const bars = m.statBars
-      .map((b) => {
-        const pct = Math.round(Math.max(0, Math.min(1, b.norm)) * 100);
-        return `
+    .map((b) => {
+      const pct = Math.round(Math.max(0, Math.min(1, b.norm)) * 100);
+      return `
       <div class="stat">
        <span class="stat-label">${esc(b.label)}</span>
        <span class="bar"><span class="bar-fill" style="width:${pct}%"></span></span>
        <span class="stat-val">${esc(b.text)}</span>
       </div>`;
-        })
-      .join("");
+    })
+    .join("");
 
   const slots = m.upgrades
-      .map((u) => {
-        const cls = [
-         "slot",
+    .map((u) => {
+      const cls = [
+        "slot",
         u.maxed && "maxed",
-         !u.maxed && !u.canAfford && "cant-afford",
-         ]
-            .filter(Boolean)
-            .join(" ");
-        const next =
-          u.maxed || u.nextName === undefined
-            ? ""
-            : `<span class="slot-next">Next: ${esc(u.nextName)}${u.nextDesc ? " — " + esc(u.nextDesc) : ""}</span>`;
-        return `
+        !u.maxed && !u.canAfford && "cant-afford",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const next =
+        u.maxed || u.nextName === undefined
+          ? ""
+          : `<span class="slot-next">Next: ${esc(u.nextName)}${u.nextDesc ? " — " + esc(u.nextDesc) : ""}</span>`;
+      return `
       <button class="${cls}" data-buy="${u.slot}"${u.maxed ? " disabled" : ""}>
         <span class="slot-info">
           <span class="slot-name">${esc(u.name)} <em>L${u.level}/${u.maxLevel}</em></span>
@@ -243,21 +246,21 @@ export function garageHtml(m: UiModel): string {
         </span>
         <span class="slot-cost">${u.maxed ? "MAX" : u.nextCost + " cr"}</span>
       </button>`;
-        })
-      .join("");
+    })
+    .join("");
 
   const car = m.cars.find((c) => c.selected);
   const switchCars = m.cars
-      .map((c) => {
-        const cls = ["mini-car", c.selected && "selected", !c.owned && "locked"]
-           .filter(Boolean)
-           .join(" ");
-        return `
+    .map((c) => {
+      const cls = ["mini-car", c.selected && "selected", !c.owned && "locked"]
+        .filter(Boolean)
+        .join(" ");
+      return `
         <button class="${cls}" data-switchcar="${c.id}"${c.owned ? "" : " disabled"}>
           ${esc(c.name)}${c.owned ? "" : `<i>${c.cost} cr</i>`}
         </button>`;
-        })
-      .join("");
+    })
+    .join("");
 
   return `
     <div class="screen screen-garage">
@@ -289,13 +292,31 @@ export function resultsHtml(view: ResultsView): string {
   const { outcome, position, total, bestLapMs } = view;
   const p = `P${position} / ${total}`;
   const timeStr = formatLap(bestLapMs);
+  // A record to beat next time: the new one, or how far off the old one.
   const record = outcome.newRecord
-      ? `<div class="new-record">★ NEW RECORD · ${formatLap(outcome.newBest)}</div>`
-     : "";
+    ? `<div class="new-record">★ NEW RECORD · ${formatLap(outcome.newBest)}</div>`
+    : isFinite(outcome.oldBest) && isFinite(bestLapMs) && bestLapMs > 0
+      ? `<div class="result-record">Track record ${formatLap(outcome.oldBest)} (${formatSplit(bestLapMs - outcome.oldBest)})</div>`
+      : "";
+  // Where the credits came from, so "go faster" and "beat the field" both
+  // visibly pay. A zero pace bonus says how to earn one.
+  const { base, pace, podium } = outcome.breakdown;
+  const par = view.parMs !== undefined ? formatPar(view.parMs) : undefined;
+  const parts = [
+    `Finish +${base}`,
+    pace > 0
+      ? `Pace +${pace}${par ? ` (par ${par})` : ""}`
+      : par
+        ? `Pace +0 — beat par ${par} for a bonus`
+        : "",
+    podium > 0 ? `P${position} +${podium}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   // `unlockedCar` is a car you can now *afford*; buying it is still your call.
   const unlocked = outcome.unlockedCar
-      ? `<div class="unlocks">★ New car affordable: ${esc(view.unlockedCarName ?? outcome.unlockedCar)} — unlock it from the menu</div>`
-      : "";
+    ? `<div class="unlocks">★ New car affordable: ${esc(view.unlockedCarName ?? outcome.unlockedCar)} — unlock it from the menu</div>`
+    : "";
   return `
     <div class="screen screen-results">
       <div class="panel results-panel">
@@ -303,6 +324,7 @@ export function resultsHtml(view: ResultsView): string {
         <div class="result-position">${p}</div>
         <div class="result-time">Best lap: <b>${timeStr}</b></div>
         <div class="reward">+ ${outcome.creditsEarned} cr</div>
+        <div class="reward-parts">${esc(parts)}</div>
         ${record}
         ${unlocked}
         <div class="results-actions">
@@ -321,10 +343,50 @@ export function raceOverlay(km: KeyMap, muted: boolean): string {
      <div class="screen screen-race-overlay">
        <div class="race-controls">
          <button class="ghost" data-action="quit">◀ Menu</button>
+         <button class="ghost" data-action="pause" aria-label="Pause">⏸ Pause</button>
          ${soundButton(muted)}
        </div>
        <div class="hint race-hint">${esc(controlsHint(km))}</div>
+       ${TOUCH_CONTROLS}
      </div>`;
+}
+
+/**
+ * On-screen driving controls (see `core/TouchInput.ts`): steering under the
+ * left thumb, pedals + drift under the right. CSS shows them only on touch
+ * screens. Plain elements, not buttons, so they never take keyboard focus.
+ */
+const TOUCH_CONTROLS = `
+  <div class="touch-controls">
+    <div class="touch-steer">
+      <div class="touch-btn" data-touch="left" aria-label="Steer left">◀</div>
+      <div class="touch-btn" data-touch="right" aria-label="Steer right">▶</div>
+    </div>
+    <div class="touch-pedals">
+      <div class="touch-btn touch-drift" data-touch="drift" aria-label="Handbrake">DRIFT</div>
+      <div class="touch-btn touch-brake" data-touch="brake" aria-label="Brake">BRAKE</div>
+      <div class="touch-btn touch-gas" data-touch="gas" aria-label="Gas">GAS</div>
+    </div>
+  </div>`;
+
+/**
+ * The pause menu. The race behind it is frozen (clock, cars, countdown) until
+ * it is resumed; restarting or quitting from here drops it.
+ */
+export function pauseHtml(muted: boolean): string {
+  return `
+    <div class="screen screen-pause">
+      <div class="panel pause-panel">
+        <div class="pause-title">Paused</div>
+        <div class="pause-actions">
+          <button class="primary" data-action="resume">▶ Resume</button>
+          <button class="ghost" data-action="restart">↻ Restart race</button>
+          <button class="ghost" data-action="quit">◀ Quit to menu</button>
+          ${soundButton(muted)}
+        </div>
+        <div class="hint">Esc or P resume · R restart · Q menu</div>
+      </div>
+    </div>`;
 }
 
 /**
@@ -342,10 +404,12 @@ export function onboardingHtml(km: KeyMap): string {
        <div class="onboarding-panel">
          <div class="onboarding-title">How to Play — RC Racer</div>
          <div class="onboarding-body">
-           <p><b>Drive:</b> ${esc(controlsHint(km))}. Hold the handbrake through a corner to drift.</p>
-           <p><b>Race:</b> Complete laps, beat your best time and finish ahead of the AI rivals.</p>
-           <p><b>Earn → Upgrade → Go Faster:</b> Credits are awarded for finishing. Spend them in the Garage to upgrade Engine, Tires, Brakes, Suspension, Aero, Chassis and Drift Kit. Each upgrade changes real physics.</p>
-           <p><b>Progress:</b> Clear a track to unlock the next. Pick different car classes for different tracks.</p>
+           <p class="no-touch"><b>Drive:</b> ${esc(controlsHint(km))}. Hold the handbrake through a corner to drift. A gamepad works too (stick, triggers, A to drift, Start to pause).</p>
+           <p class="touch-only"><b>Drive:</b> ◀ ▶ under your left thumb steer; GAS and BRAKE are on the right. Hold DRIFT through a corner to slide.</p>
+           <p><b>Race:</b> Go on the green light and complete the laps. Credits pay for finishing, more for a podium, and a bonus for a best lap under the track's par.</p>
+           <p><b>Chase your ghost:</b> Once you've set a time, a ghost car replays your best lap; the timer shows how far ahead (−) or behind (+) you are.</p>
+           <p><b>Earn → Upgrade → Go Faster:</b> Spend credits in the Garage on Engine, Tires, Brakes, Suspension, Aero, Chassis and Drift Kit — each changes real physics. Save up for faster car classes.</p>
+           <p><b>Progress:</b> Clear a track to unlock the next.</p>
          </div>
          <div class="onboarding-actions">
            <button class="ghost" data-action="close-onboarding">◀ Menu</button>
@@ -358,26 +422,26 @@ export function onboardingHtml(km: KeyMap): string {
 /** Interactive settings screen: display prefs + live key rebinding. */
 export function settingsHtml(v: SettingsView): string {
   const rows = v.bindings
-      .map((b) => {
-        const capturing = v.rebinding && v.rebindingAction === b.action;
-        const value = capturing
-           ? "Press a key…"
-           : b.keys.length > 0
-              ? b.keys.map(keyLabel).join(" / ")
-              : "—";
-        return `
+    .map((b) => {
+      const capturing = v.rebinding && v.rebindingAction === b.action;
+      const value = capturing
+        ? "Press a key…"
+        : b.keys.length > 0
+          ? b.keys.map(keyLabel).join(" / ")
+          : "—";
+      return `
             <div class="setting-row key-row">
               <span>${esc(b.label)}</span>
               <button class="key-btn${capturing ? " capturing" : ""}" data-bind="${esc(
-         b.action,
-        )}">${esc(value)}</button>
+                b.action,
+              )}">${esc(value)}</button>
             </div>`;
-        })
-      .join("");
+    })
+    .join("");
   const cbOn = v.colorMode === "cb";
   const captureHint = v.rebinding
-      ? `<div class="rebind-hint">${esc(v.notice ?? "Press any key to assign · Esc cancels")}</div>`
-      : "";
+    ? `<div class="rebind-hint">${esc(v.notice ?? "Press any key to assign · Esc cancels")}</div>`
+    : "";
   return `
        <div class="screen screen-settings">
          <div class="settings-panel">
@@ -392,8 +456,8 @@ export function settingsHtml(v: SettingsView): string {
                <div class="setting-row">
                  <span>HUD size</span>
                  <button class="ghost" data-action="cycle-hud">${esc(
-                      HUD_SIZE_LABEL[v.hudSize],
-        )}</button>
+                   HUD_SIZE_LABEL[v.hudSize],
+                 )}</button>
               </div>
                <div class="setting-row">
                  <span>Sound</span>

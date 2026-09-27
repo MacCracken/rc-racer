@@ -18,8 +18,8 @@ import { computeReward } from "../../src/game/economy.ts";
  */
 
 const sedanStats = applyBuild(
-    carClasses.find((c) => c.id === "street-sedan")!.base,
-    freshUpgrades(),
+  carClasses.find((c) => c.id === "street-sedan")!.base,
+  freshUpgrades(),
 );
 
 /** Drive one autopilot lap on `def` and return its single-lap time (ms). */
@@ -29,7 +29,10 @@ function autopilotLapMs(def: TrackDef): number {
   const car = world.car;
   let clockMs = 0;
   const race = new RaceState(track, () => clockMs);
-  const driver = makeDriver(track, { pace: def.aiPace ?? 0.8, lookahead: 0.05});
+  const driver = makeDriver(track, {
+    pace: def.aiPace ?? 0.8,
+    lookahead: 0.05,
+  });
   const dt = FIXED_DT;
   let prev = { x: car.position.x, y: car.position.y };
   const cap = Math.ceil(45 / dt);
@@ -38,14 +41,14 @@ function autopilotLapMs(def: TrackDef): number {
       position: car.position,
       velocity: car.velocity,
       angle: car.angle,
-         });
+    });
     stepCar(car, world.walls, track, input, sedanStats, dt);
     const cur = { x: car.position.x, y: car.position.y };
     race.update(prev, cur);
     prev = cur;
     clockMs += dt * 1000;
     if (race.lap >= 1) break;
-       }
+  }
   return race.bestLapMs;
 }
 
@@ -54,16 +57,28 @@ describe("economy: the par bonus", () => {
     const par = 4000;
     const laps = 3;
     const base = 60 + laps * 8; // base payout, no performance bonus
-    const atPar = computeReward({ parLapMs: par, bestLapMs: par, lapsCompleted: laps });
-    const faster = computeReward({ parLapMs: par, bestLapMs: par * 0.85, lapsCompleted: laps });
-    const slower = computeReward({ parLapMs: par, bestLapMs: par * 1.2, lapsCompleted: laps });
+    const atPar = computeReward({
+      parLapMs: par,
+      bestLapMs: par,
+      lapsCompleted: laps,
+    });
+    const faster = computeReward({
+      parLapMs: par,
+      bestLapMs: par * 0.85,
+      lapsCompleted: laps,
+    });
+    const slower = computeReward({
+      parLapMs: par,
+      bestLapMs: par * 1.2,
+      lapsCompleted: laps,
+    });
 
-        // At par you get exactly the base; a faster lap earns strictly more;
-       // a slower lap earns *no* bonus (diminishing, never negative).
+    // At par you get exactly the base; a faster lap earns strictly more;
+    // a slower lap earns *no* bonus (diminishing, never negative).
     expect(atPar).toBe(base);
     expect(faster).toBeGreaterThan(base);
     expect(slower).toBe(base);
-      });
+  });
 });
 
 describe("economy: par times are realistic", () => {
@@ -72,15 +87,21 @@ describe("economy: par times are realistic", () => {
       const par = def.parLapMs;
       expect(par, `${def.name}: parLapMs is set`).toBeTypeOf("number");
       expect(par, `${def.name}: parLapMs positive`).toBeGreaterThan(0);
-        // Run a lap and make sure par isn't so aggressive it's unreachable.
+      // Run a lap and make sure par isn't so aggressive it's unreachable.
       const t = autopilotLapMs(def);
       expect(t, `${def.name}: autopilot closed a lap`).toBeGreaterThan(0);
       expect(Number.isFinite(t), `${def.name}: finite lap time`).toBe(true);
-     const ratio = t / par!;
-     // The autopilot should be *around* par (within [0.7x, 1.6x]); tighter than
-    // this would mean par is set to an impossible or trivially-slow number.
-      expect(ratio, `${def.name}: autopilot ${Math.round(t)}ms vs par ${par}ms`).toBeGreaterThanOrEqual(0.7);
-      expect(ratio, `${def.name}: autopilot far slower than par`).toBeLessThanOrEqual(1.6);
-     }
-      });
+      const ratio = t / par!;
+      // The autopilot should be *around* par (within [0.7x, 1.6x]); tighter than
+      // this would mean par is set to an impossible or trivially-slow number.
+      expect(
+        ratio,
+        `${def.name}: autopilot ${Math.round(t)}ms vs par ${par}ms`,
+      ).toBeGreaterThanOrEqual(0.7);
+      expect(
+        ratio,
+        `${def.name}: autopilot far slower than par`,
+      ).toBeLessThanOrEqual(1.6);
+    }
+  });
 });

@@ -94,7 +94,13 @@ describe("Save migration — schema bump (v1 -> v3)", () => {
     const out = migrate({
       ownedCars: ["street-sedan"],
       upgrades: {
-        "street-sedan": { engine: 99, tires: -2, brakes: 1.7, aero: "x", bogus: 3 },
+        "street-sedan": {
+          engine: 99,
+          tires: -2,
+          brakes: 1.7,
+          aero: "x",
+          bogus: 3,
+        },
         "no-such-car": { engine: 1 },
       },
     });
@@ -117,11 +123,12 @@ describe("Save migration — schema bump (v1 -> v3)", () => {
   });
 
   it("never selects a track that is still locked", () => {
-    expect(migrate({ selectedTrack: "slalom", clearedTracks: [] }).selectedTrack).toBe(
-      "overture",
-    );
     expect(
-      migrate({ selectedTrack: "hairpin", clearedTracks: ["overture"] }).selectedTrack,
+      migrate({ selectedTrack: "slalom", clearedTracks: [] }).selectedTrack,
+    ).toBe("overture");
+    expect(
+      migrate({ selectedTrack: "hairpin", clearedTracks: ["overture"] })
+        .selectedTrack,
     ).toBe("hairpin");
   });
 
@@ -132,7 +139,10 @@ describe("Save migration — schema bump (v1 -> v3)", () => {
       y: 0,
       heading: 0,
     }));
-    const out = migrate({ bestLaps: { overture: 18000 }, bestGhosts: { overture: pts } });
+    const out = migrate({
+      bestLaps: { overture: 18000 },
+      bestGhosts: { overture: pts },
+    });
     expect(out.bestGhosts.overture?.length).toBe(MAX_GHOST_POINTS);
   });
 

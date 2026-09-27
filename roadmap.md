@@ -243,7 +243,7 @@ track, understand they should upgrade, upgrade, and feel progress — with juice
 **Deliverable demo:** "The **product** — a small but complete, juicy arcade
 racer." Publicize-able.
 
-**Status (Phase 3): 🚧 IN PROGRESS — content + the headless-verifiable polish in; pure-visual/juice remains for the browser run.**
+**Status (Phase 3): ✅ DONE — exit criteria met and browser-verified. The track editor moved to Phase 5.**
 
 _Shipped & headless-verified:_
 
@@ -277,13 +277,21 @@ _Shipped & headless-verified:_
   repaired, and a new record stores its ghost). `_Content.test.ts`_ also asserts
   a full race yields a non-empty, time-ascending ghost.
 
-_Deliberately deferred to the browser-run polish (not headless-verifiable):_
+_Closed out with a browser in the loop:_
 
-- Curved curbs, tire smoke, finish confetti, minimap, **and the _visual_ render
-  of the ghost-line + the _sound_ the audio seam fires** — the data/models are
-  all shipped + tested; only the on-screen/audible presentation is un-confirmed
-  here and folds into Phase 4 once a browser is in play. A track editor / JSON
-  authoring tool and onboarding how-to text remain on the list too.
+- **Visuals confirmed in Chromium** (screenshots + the Playwright smoke suite
+  in CI): curbs, skid marks + tyre smoke, confetti, minimap, ghost line, the
+  HUD, all menus.
+- **Engine pitch ~ RPM, done:** a continuous WebAudio voice (sawtooth + a
+  detuned square through a throttle-opened low-pass) whose pitch follows road
+  speed, revving on the grid under throttle, with a per-class pitch (buggy
+  high, brawler deep) — plus a tyre squeal driven by the same slip test that
+  lays skid marks. The rev model is pure and tested; the audio graph was
+  checked in Chromium with an AnalyserNode (pitch/gain track the car, silent
+  when paused). Whether it _sounds_ right still wants a human ear.
+- **Onboarding:** How to Play opens by itself on first launch (a persisted
+  `onboarded` flag; saves with progress skip it) and covers podium/par/ghost.
+- **Moved to Phase 5:** the track editor / JSON import tool.
 - **Eyeball-found bug, fixed during a browser run:** the camera was set to the
   start line _once_ and then frozen, so the car drove off a fixed window and
   only half the track stayed on screen. `followCamera(dt)` now lerps the view
@@ -310,6 +318,45 @@ Not new features — extract, tune, stabilize.
 **Exit criteria:** Stable 60fps, a deployed URL, a 60-second "first-run" video.
 This is the **public demo**.
 
+**Status (Phase 4): 🚧 NEARLY THERE — everything a machine can do is done;
+what's left needs a person (or one repo setting).**
+
+_Done:_
+
+- **Perf.** Profiled in Chromium: the JS side of a frame is ~0.5 ms; the cost
+  is filling pixels, which bites when the canvas is rasterized in software.
+  The ground is now baked into the pre-painted track art, the vignette is
+  cached, and the canvas is opaque: 2–3× faster at high resolutions
+  (headless software raster, before → after: 1080p 28 → 60 fps, 2× laptop
+  12 → 35, 3× phone 21 → 60) with visually identical output. Skid marks are
+  pooled (no per-frame allocation).
+- **Input.** Key remap; **touch controls** (multi-touch, shown only on touch
+  screens) and **gamepad** (analog stick + triggers, Start pauses), all merged
+  through the `IInput` seam; a phone layout (stacked panels, a HUD that fits
+  narrow screens, a camera that pulls out on small viewports).
+- **Accessibility/readability.** Colorblind palette (incl. the ghost split's
+  colours), HUD size, mute; the menu's Start button pinned in view on short
+  screens.
+- **Packaging.** Relative-base build (works at any path), a GitHub Pages
+  deploy workflow on push to `main`, favicon + page metadata.
+- **Stability.** Playwright smoke tests in CI drive the real build: boot,
+  race, pause, results, garage, settings rebind, and touch on an emulated
+  phone; any page error fails them.
+- **Polish for a public demo:** a 3-2-1 start countdown (the field waits for
+  GO), pause with auto-pause on focus loss, a podium bonus with itemised
+  results ("Finish +84 · Pace +5 (par 18.0s) · P1 +40"), best laps on the
+  menu, and a ghost car with a live split (see Phase 5).
+
+_Left — needs a person:_
+
+- [ ] Enable GitHub Pages (Settings → Pages → Source: GitHub Actions), merge
+      to `main` → public URL.
+- [ ] Feel-tuning pass: drive every car on every track; fix the corner that
+      feels wrong (`tuning.ts`, per-track `aiPace` / `parLapMs`).
+- [ ] 60fps on a real low-end laptop (the headless numbers above are a proxy).
+- [ ] Listen to the engine + squeal mix; adjust levels in `core/Audio.ts`.
+- [ ] Record the 60-second first-run video (see DEPLOY.md).
+
 ---
 
 ## Phase 5 — Stretch / post-v1 (only after demo is live)
@@ -319,9 +366,15 @@ Track the vision, gated, none blocking the demo:
 - **Weather/track variants:** rain (lower grip), night, dirt vs. asphalt
   surfaces, each with a different stat tradeoff.
 - **More tracks / content packs** and an **unlock map**.
-- **Ghost racing** vs. your own best time, replay capture.
+- ✅ **Ghost racing** vs. your own best time: a ghost car replays the lap to
+  beat (your record, or this race's best once it's faster) with a live split
+  under the timer, indexed by distance along the track. _Replay capture is
+  still open._
 - **Isometric camera tilt** (seam already exists in camera code).
-- **Mobile/touch** input via the input abstraction; responsive layout.
+- ✅ **Mobile/touch** input via the input abstraction; responsive layout (plus
+  gamepad support).
+- **Track editor / JSON import** (moved from Phase 3): a read-only visualizer
+  - JSON import beats a from-scratch authoring UI.
 - **Solid/Svelte UI** for complex menus once the view set is known.
 - **Local leaderboards / shareable best-time codes** (IndexedDB + share URL).
 - **Optional cosmetic content packs** (never a paywall on skill).
@@ -369,5 +422,8 @@ Realistic to a "good enough public demo" in **~1–1.5 weeks focused effort**.
 - [x] Drivable car with real traction/drift on a top-down track.
 - [x] 3 car classes, 6 tracks, working upgrade tree + credits + save.
 - [x] AI rivals + best-lap records.
-- [x] Skid marks + audio event seam in (visual/juice + 60fps check pending a browser).
-- [ ] Deployed at a public URL; 60-sec first-run video exists.
+- [x] Skid marks, tyre smoke, engine voice + squeal, event sounds — browser-verified.
+- [x] Browser smoke tests in CI; deploy workflow ready.
+- [ ] Deployed at a public URL (needs Pages enabled + a merge to `main`).
+- [ ] 60fps confirmed on a low-end laptop.
+- [ ] 60-sec first-run video exists.

@@ -4,6 +4,7 @@ import {
   garageHtml,
   resultsHtml,
   raceOverlay,
+  pauseHtml,
   onboardingHtml,
   settingsHtml,
   controlsHint,
@@ -18,7 +19,13 @@ import { carClasses } from "../src/game/cars.ts";
 /** A minimal, fully-owned UiModel for the pure HTML generators. */
 const bars: StatBar[] = [
   { key: "grip", label: "Grip", value: 1, norm: 0.5, text: "50" },
-  { key: "maxSpeed", label: "Top speed", value: 1, norm: 0.5, text: "108 km/h" },
+  {
+    key: "maxSpeed",
+    label: "Top speed",
+    value: 1,
+    norm: 0.5,
+    text: "108 km/h",
+  },
 ];
 
 function model(): UiModel {
@@ -66,6 +73,8 @@ function model(): UiModel {
 
 const BASE_OUTCOME = {
   creditsEarned: 50,
+  breakdown: { base: 50, pace: 0, podium: 0 },
+  parMs: 4000,
   newRecord: false,
   oldBest: 4000,
   newBest: 4000,
@@ -107,6 +116,22 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
     expect(html).toContain('data-action="quit"');
     // It should also advertise the Esc/Q shortcut.
     expect(html.toLowerCase()).toContain("esc");
+  });
+
+  it("the race overlay carries on-screen touch controls for every action", () => {
+    const html = raceOverlay(defaultKeyMap(), false);
+    for (const c of ["left", "right", "gas", "brake", "drift"])
+      expect(html).toContain(`data-touch="${c}"`);
+  });
+
+  it("the race overlay can pause; the pause menu resumes, restarts or quits", () => {
+    expect(raceOverlay(defaultKeyMap(), false)).toContain(
+      'data-action="pause"',
+    );
+    const html = pauseHtml(false);
+    for (const action of ["resume", "restart", "quit", "toggle-sound"])
+      expect(html).toContain(`data-action="${action}"`);
+    expect(controlsHint(defaultKeyMap())).toContain("Esc pause");
   });
 
   it("offers a mute toggle in Settings and mid-race, labelled with its state", () => {
@@ -209,5 +234,53 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
     });
     expect(html).toContain("Q is reserved");
     expect(html).toContain("Press a key…");
+  });
+});
+
+describe("Results explain the payout; the menu shows your times", () => {
+  it("breaks the credits down, and says how to earn a pace bonus", () => {
+    const html = resultsHtml({
+      ...resultsView({
+        creditsEarned: 104,
+        breakdown: { base: 84, pace: 0, podium: 20 },
+      }),
+      parMs: 18000,
+    });
+    expect(html).toContain("+ 104 cr");
+    expect(html).toContain("Finish +84");
+    expect(html).toContain("beat par 18.0s for a bonus");
+    expect(html).toContain("P2 +20");
+  });
+
+  it("names the pace bonus when earned, and omits an empty podium", () => {
+    const html = resultsHtml({
+      ...resultsView({
+        creditsEarned: 132,
+        breakdown: { base: 84, pace: 48, podium: 0 },
+      }),
+      parMs: 18000,
+    });
+    expect(html).toContain("Pace +48 (par 18.0s)");
+    expect(html).not.toMatch(/P\d \+0/);
+  });
+
+  it("shows the gap to the track record when it wasn't beaten", () => {
+    const html = resultsHtml({
+      ...resultsView({ oldBest: 3900, newBest: 3900 }),
+      bestLapMs: 4420,
+    });
+    expect(html).toContain("Track record 0:03.900 (+0.52)");
+    // No record yet (first finish): nothing to compare against.
+    const first = resultsHtml(resultsView({ oldBest: Infinity }));
+    expect(first).not.toContain("Track record");
+  });
+
+  it("the menu lists your best lap per track and a Start button naming it", () => {
+    const m = model();
+    m.tracks[0].bestLabel = "0:17.717";
+    const html = menuHtml(m);
+    expect(html).toContain("best <b>0:17.717</b>");
+    expect(html).toMatch(/data-action="start"[^>]*>▶ Start race · Overture</);
+    expect(html).toContain('class="menu-footer"');
   });
 });

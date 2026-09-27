@@ -6,11 +6,7 @@ import { RaceState } from "../../src/race/RaceState.ts";
 import { makeDriver } from "../../src/race/AiDriver.ts";
 import { FIXED_DT, type CarStats } from "../../src/core/tuning.ts";
 import { carById } from "../../src/game/cars.ts";
-import {
-  applyBuild,
-  freshUpgrades,
-  SLOTS,
-} from "../../src/game/upgrades.ts";
+import { applyBuild, freshUpgrades, SLOTS } from "../../src/game/upgrades.ts";
 import {
   rivalCarFor,
   rivalField,
@@ -40,13 +36,23 @@ function placeAgainstField(def: TrackDef, player: CarStats): number {
   const cars = arena.cars.map((c) => ({
     c,
     race: new RaceState(track, () => clock),
-    drive: makeDriver(track, { pace: c.isPlayer ? 0.9 : c.pace!, lookahead: 0.05 }),
+    drive: makeDriver(track, {
+      pace: c.isPlayer ? 0.9 : c.pace!,
+      lookahead: 0.05,
+    }),
     prev: { x: c.body.position.x, y: c.body.position.y },
   }));
   for (let s = 0; s < 150 / FIXED_DT && !cars[0].race.finished; s++) {
     clock += FIXED_DT * 1000;
     for (const k of cars) {
-      stepCar(k.c.body, arena.walls, track, k.drive(k.c.body), k.c.stats, FIXED_DT);
+      stepCar(
+        k.c.body,
+        arena.walls,
+        track,
+        k.drive(k.c.body),
+        k.c.stats,
+        FIXED_DT,
+      );
       k.race.update(k.prev, k.c.body.position);
       k.prev = { x: k.c.body.position.x, y: k.c.body.position.y };
     }
@@ -70,7 +76,9 @@ describe("rivals come from the track", () => {
     expect(field).toHaveLength(3);
     expect(field[2].stats).toEqual(rivalStatsFor(def));
     for (let i = 1; i < field.length; i++) {
-      expect(field[i].stats.maxSpeed).toBeGreaterThan(field[i - 1].stats.maxSpeed);
+      expect(field[i].stats.maxSpeed).toBeGreaterThan(
+        field[i - 1].stats.maxSpeed,
+      );
       expect(field[i].pace).toBeGreaterThan(field[i - 1].pace);
     }
   });
@@ -85,13 +93,23 @@ describe("rivals come from the track", () => {
   it("the sedan build needed to win never drops as tracks unlock", () => {
     const needed = tracks.map((def) => {
       for (let tier = 0; tier <= 4; tier++)
-        if (placeAgainstField(def, built("street-sedan", tier)) === 1) return tier;
+        if (placeAgainstField(def, built("street-sedan", tier)) === 1)
+          return tier;
       return 5; // unwinnable in a sedan
     });
     expect(needed[0], "the warm-up is winnable in the starter car").toBe(0);
     for (let i = 1; i < needed.length; i++)
-      expect(needed[i], `${tracks[i].name} easier than ${tracks[i - 1].name}`).toBeGreaterThanOrEqual(needed[i - 1]);
-    expect(needed[needed.length - 1], "the last track needs upgrades").toBeGreaterThan(0);
-    expect(Math.max(...needed), "every track is winnable in some sedan build").toBeLessThanOrEqual(4);
+      expect(
+        needed[i],
+        `${tracks[i].name} easier than ${tracks[i - 1].name}`,
+      ).toBeGreaterThanOrEqual(needed[i - 1]);
+    expect(
+      needed[needed.length - 1],
+      "the last track needs upgrades",
+    ).toBeGreaterThan(0);
+    expect(
+      Math.max(...needed),
+      "every track is winnable in some sedan build",
+    ).toBeLessThanOrEqual(4);
   });
 });

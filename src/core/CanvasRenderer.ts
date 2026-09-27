@@ -9,13 +9,15 @@ import {
   CAMERA_ZOOM_SLOW,
   CAR_LENGTH,
   CAR_WIDTH,
+  GO_FLASH_MS,
   KMH_PER_PX_S,
 } from "./tuning.ts";
-import { formatLap, currentLapTimeMs } from "../race/RaceState.ts";
+import { formatLap, formatSplit, currentLapTimeMs } from "../race/RaceState.ts";
 import {
   carPalette,
   hudScaleOf,
   shade,
+  splitColors,
   type CarLook,
   type ColorMode,
   type HudSize,
@@ -59,25 +61,29 @@ interface TrackArt {
 export class Canvas2DRenderer implements IRenderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
-   /** Presentation theme, driven by the persisted Settings. */
+  /** Presentation theme, driven by the persisted Settings. */
   private colorMode: ColorMode = "std";
   private hudScale = 1;
   private art: TrackArt | null = null;
+  /** The ground texture tile, per background colour (art + screen share it). */
+  private groundTile: { color: string; tile: HTMLCanvasElement } | null = null;
   private ground: { color: string; pattern: CanvasPattern } | null = null;
-  private vignette: { w: number; h: number; fill: CanvasGradient } | null =
-    null;
+  /** The vignette, pre-shaded once per canvas size (see `drawVignette`). */
+  private vignette: HTMLCanvasElement | null = null;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
-    const ctx = canvas.getContext("2d");
+    // Opaque: every frame paints every pixel, so the browser needn't blend
+    // the canvas with the page behind it.
+    const ctx = canvas.getContext("2d", { alpha: false });
     if (ctx === null) throw new Error("2D context unavailable");
     this.ctx = ctx;
   }
 
-   /** Apply the persisted presentation theme (palette + HUD size). */
+  /** Apply the persisted presentation theme (palette + HUD size). */
   setSettings(colorMode: ColorMode, hudSize: HudSize): void {
     this.colorMode = colorMode;
     this.hudScale = hudScaleOf(hudSize);
-     }
+  }
 
   resize(
     width: number,
@@ -97,29 +103,28 @@ export class Canvas2DRenderer implements IRenderer {
       track,
       car,
       race,
-      speed,
-      nowMs,
       rivals,
-      position,
-      total,
       skidMarks,
       ghost,
       confettiAgeMs,
-      fps,
       hud = true,
       look = "sedan",
       rivalLook = look,
       controls = IDLE,
       rivalControls = [],
+      ghostCar,
+      startClockMs,
     } = scene;
     const w = this.canvas.width / this.dpr;
     const h = this.canvas.height / this.dpr;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
-    this.drawGround(track, camera, w, h);
-    this.drawTrackArt(track, camera);
+    const art = this.trackArt(track, camera);
+    this.drawGround(track, camera, w, h, art);
+    this.drawTrackArt(art, camera);
     this.drawSkidMarks(skidMarks, camera);
     this.drawGhost(ghost, camera);
+    if (ghostCar !== undefined) this.drawGhostCar(ghostCar, look, camera);
     if (hud) this.drawNextGate(track, camera, race);
     this.drawCars(
       car,
@@ -131,24 +136,11 @@ export class Canvas2DRenderer implements IRenderer {
       camera,
     );
     this.drawVignette(w, h);
-    if (hud)
-      this.drawHUD(
-        track.def.name,
-        race,
-        track,
-        speed,
-        nowMs,
-        w,
-        h,
-        position,
-        total,
-        car,
-        fps,
-        rivals,
-      );
+    if (hud) this.drawHUD(scene, w, h);
     if (confettiAgeMs !== undefined && confettiAgeMs >= 0) {
       this.drawConfetti(this.ctx, w, h, confettiAgeMs);
     }
+    if (startClockMs !== undefined) this.drawStartLights(w, h, startClockMs);
   }
 
   // --- world-space rendering ---
@@ -160,15 +152,37 @@ export class Canvas2DRenderer implements IRenderer {
     return c;
   }
 
-  /** Textured ground, locked to world space so it scrolls with the track. */
-  private drawGround(track: BuiltTrack, cam: Camera, w: number, h: number): void {
+  /** The ground's texture tile for a background colour (cached). */
+  private groundTileFor(color: string): HTMLCanvasElement | null {
+    if (this.groundTile?.color !== color) {
+      const tile = this.makeCanvas(GROUND_TILE, GROUND_TILE);
+      const g = tile.getContext("2d");
+      if (g === null) return null;
+      paintGroundTile(g, GROUND_TILE, color);
+      this.groundTile = { color, tile };
+    }
+    return this.groundTile.tile;
+  }
+
+  /**
+   * Textured ground, locked to world space so it scrolls with the track. The
+   * track art has this same ground baked in (see `paintArt`), so only the
+   * screen outside the art's rectangle is filled here — usually none of it.
+   * A full-screen pattern fill every frame was the costliest pass of all
+   * when the browser rasterizes in software.
+   */
+  private drawGround(
+    track: BuiltTrack,
+    cam: Camera,
+    w: number,
+    h: number,
+    art: TrackArt | null,
+  ): void {
     const { ctx } = this;
     const color = track.def.background ?? "#0d1f14";
     if (this.ground?.color !== color) {
-      const tile = this.makeCanvas(GROUND_TILE, GROUND_TILE);
-      const g = tile.getContext("2d");
-      if (g !== null) paintGroundTile(g, GROUND_TILE, color);
-      const pattern = g === null ? null : ctx.createPattern(tile, "repeat");
+      const tile = this.groundTileFor(color);
+      const pattern = tile === null ? null : ctx.createPattern(tile, "repeat");
       this.ground = pattern === null ? null : { color, pattern };
     }
     if (this.ground === null) {
@@ -178,19 +192,47 @@ export class Canvas2DRenderer implements IRenderer {
     }
     const z = cam.zoom;
     this.ground.pattern.setTransform(
-      new DOMMatrix([z, 0, 0, z, w / 2 - cam.view.x * z, h / 2 - cam.view.y * z]),
+      new DOMMatrix([
+        z,
+        0,
+        0,
+        z,
+        w / 2 - cam.view.x * z,
+        h / 2 - cam.view.y * z,
+      ]),
     );
     ctx.fillStyle = this.ground.pattern;
-    ctx.fillRect(0, 0, w, h);
+    const tl = art === null ? null : cam.toScreen({ x: art.x, y: art.y });
+    if (art === null || tl === null) {
+      ctx.fillRect(0, 0, w, h);
+      return;
+    }
+    const aw = (art.canvas.width / art.scale) * cam.zoom;
+    const ah = (art.canvas.height / art.scale) * cam.zoom;
+    if (tl.x >= w || tl.y >= h || tl.x + aw <= 0 || tl.y + ah <= 0) {
+      ctx.fillRect(0, 0, w, h);
+      return;
+    }
+    // The bands around the art, reaching 1px under its edge so no hairline
+    // can open up at the seam (the art is drawn over the overlap).
+    const x0 = Math.max(0, Math.min(w, tl.x + 1));
+    const y0 = Math.max(0, Math.min(h, tl.y + 1));
+    const x1 = Math.max(0, Math.min(w, tl.x + aw - 1));
+    const y1 = Math.max(0, Math.min(h, tl.y + ah - 1));
+    if (y0 > 0) ctx.fillRect(0, 0, w, y0);
+    if (y1 < h) ctx.fillRect(0, y1, w, h - y1);
+    if (x0 > 0) ctx.fillRect(0, y0, x0, y1 - y0);
+    if (x1 < w) ctx.fillRect(x1, y0, w - x1, y1 - y0);
   }
 
   /**
-   * Blit the pre-painted track. It is painted once per track, at about one
-   * canvas pixel per device pixel for the *closest* zoom the camera reaches,
-   * so the per-frame speed zoom never triggers a repaint. It only repaints
-   * for a new track or when it needs more resolution (e.g. a sharper screen).
+   * The pre-painted track (ground included). It is painted once per track,
+   * at about one canvas pixel per device pixel for the *closest* zoom the
+   * camera reaches, so the per-frame speed zoom never triggers a repaint. It
+   * only repaints for a new track or when it needs more resolution (e.g. a
+   * sharper screen).
    */
-  private drawTrackArt(track: BuiltTrack, cam: Camera): void {
+  private trackArt(track: BuiltTrack, cam: Camera): TrackArt | null {
     const b = track.bounds;
     const worldW = b.maxX - b.minX + ART_MARGIN * 2;
     const worldH = b.maxY - b.minY + ART_MARGIN * 2;
@@ -200,11 +242,19 @@ export class Canvas2DRenderer implements IRenderer {
       Math.max(0.5, Math.max(cam.zoom, CAMERA_ZOOM_SLOW) * this.dpr),
     );
     const id = `${track.def.id}|${track.width}`;
-    if (this.art === null || this.art.id !== id || this.art.scale < want * 0.97) {
+    if (
+      this.art === null ||
+      this.art.id !== id ||
+      this.art.scale < want * 0.97
+    ) {
       const scale = Math.min(cap, Math.ceil(want * 4) / 4);
       this.art = this.paintArt(track, id, scale, worldW, worldH);
     }
-    const art = this.art;
+    return this.art;
+  }
+
+  /** Blit the track art into place for this camera. */
+  private drawTrackArt(art: TrackArt | null, cam: Camera): void {
     if (art === null) return;
     const p = cam.toScreen({ x: art.x, y: art.y });
     this.ctx.drawImage(
@@ -229,7 +279,7 @@ export class Canvas2DRenderer implements IRenderer {
       Math.ceil(worldW * scale),
       Math.ceil(worldH * scale),
     );
-    const g = canvas.getContext("2d");
+    const g = canvas.getContext("2d", { alpha: false });
     if (g === null) return null;
     const tile = this.makeCanvas(96, 96);
     const tg = tile.getContext("2d");
@@ -237,6 +287,14 @@ export class Canvas2DRenderer implements IRenderer {
     if (tg !== null) paintAsphaltTile(tg, 96, surface);
     const asphalt = (tg && g.createPattern(tile, "repeat")) ?? surface;
     g.setTransform(scale, 0, 0, scale, -x * scale, -y * scale);
+    // The ground first, anchored to the world like the live ground, so the
+    // two meet seamlessly at the art's edge. Over-filled a little: the canvas
+    // size was rounded up, and an unpainted opaque pixel is black.
+    const color = track.def.background ?? "#0d1f14";
+    const groundTile = this.groundTileFor(color);
+    g.fillStyle =
+      (groundTile && g.createPattern(groundTile, "repeat")) ?? color;
+    g.fillRect(x, y, worldW + 2, worldH + 2);
     paintTrackArt(g, track, asphalt, sceneryFor(track));
     return { id, canvas, x, y, scale };
   }
@@ -262,6 +320,29 @@ export class Canvas2DRenderer implements IRenderer {
       }
     }
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /** The chased lap's car: a pale, see-through copy of the player's car. */
+  private drawGhostCar(
+    g: { x: number; y: number; heading: number; alpha: number },
+    look: CarLook,
+    cam: Camera,
+  ): void {
+    if (g.alpha <= 0) return;
+    const { ctx } = this;
+    const p = cam.toScreen(g);
+    ctx.save();
+    ctx.globalAlpha = 0.55 * g.alpha;
+    ctx.translate(p.x, p.y);
+    ctx.rotate(g.heading);
+    ctx.scale(cam.zoom, cam.zoom);
+    paintCar(ctx, look, {
+      body: "#dff4ff",
+      accent: "#7fd3ff",
+      steer: 0,
+      braking: false,
+    });
     ctx.restore();
   }
 
@@ -350,7 +431,14 @@ export class Canvas2DRenderer implements IRenderer {
     // Rivals get their own pale trim, not the player's accent.
     const rivalTrim = shade(pal.rival, 0.6);
     rivals.forEach((b, i) =>
-      this.drawCarBody(b, rivalLook, pal.rival, rivalTrim, rivalControls[i] ?? IDLE, cam),
+      this.drawCarBody(
+        b,
+        rivalLook,
+        pal.rival,
+        rivalTrim,
+        rivalControls[i] ?? IDLE,
+        cam,
+      ),
     );
     this.drawCarBody(player, look, pal.player, pal.nose, controls, cam);
     ctx.restore();
@@ -374,56 +462,46 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.restore();
   }
 
-  /** Darken the screen edges a touch, pulling the eye to the action. */
+  /**
+   * Darken the screen edges a touch, pulling the eye to the action. Shading
+   * a radial gradient across the screen every frame was a costly pass on a
+   * software-rasterized canvas; it's shaded once per canvas size into an
+   * offscreen canvas at device resolution and blitted 1:1.
+   */
   private drawVignette(w: number, h: number): void {
-    const { ctx } = this;
-    if (this.vignette?.w !== w || this.vignette.h !== h) {
-      const fill = ctx.createRadialGradient(
-        w / 2,
-        h / 2,
-        Math.min(w, h) * 0.35,
-        w / 2,
-        h / 2,
-        Math.hypot(w, h) * 0.62,
+    const { width, height } = this.canvas;
+    // A 0-px canvas (a hidden or minimised embed) has nothing to darken, and
+    // drawImage throws on a 0-px source, which would stop the frame loop.
+    if (width === 0 || height === 0) return;
+    let v = this.vignette;
+    if (v === null || v.width !== width || v.height !== height) {
+      v = this.makeCanvas(width, height);
+      const g = v.getContext("2d");
+      if (g === null) return;
+      const fill = g.createRadialGradient(
+        width / 2,
+        height / 2,
+        Math.min(width, height) * 0.35,
+        width / 2,
+        height / 2,
+        Math.hypot(width, height) * 0.62,
       );
       fill.addColorStop(0, "rgba(0,0,0,0)");
       fill.addColorStop(1, "rgba(0,0,0,0.4)");
-      this.vignette = { w, h, fill };
+      g.fillStyle = fill;
+      g.fillRect(0, 0, width, height);
+      this.vignette = v;
     }
-    ctx.fillStyle = this.vignette.fill;
-    ctx.fillRect(0, 0, w, h);
+    this.ctx.drawImage(v, 0, 0, w, h);
   }
 
   // --- screen-space HUD ---
 
-  private drawHUD(
-    trackName: string,
-    race: RaceState,
-    track: BuiltTrack,
-    speed: number,
-    nowMs: number,
-    w: number,
-    h: number,
-    position?: number,
-    total?: number,
-    car?: Matter.Body,
-    fps?: number,
-    rivals?: Matter.Body[],
-  ): void {
+  private drawHUD(scene: RenderScene, w: number, h: number): void {
+    const { race, track, speed, nowMs, position, total, car, fps, rivals } =
+      scene;
     const { ctx } = this;
-    const s = this.hudScale;
     const pad = 12;
-    const barH = 48 * s;
-    const row1 = 8 * s;
-    const row2 = 28 * s;
-    const font = `${16 * s}px system-ui, sans-serif`;
-    ctx.save();
-    ctx.font = font;
-    ctx.textBaseline = "top";
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillRect(0, 0, w, barH);
-    ctx.fillStyle = "#fff";
-
     const kmh = Math.round(Math.abs(speed) * KMH_PER_PX_S);
     // The lap being driven (1-based), not laps completed: the final lap
     // reads 3/3, not 2/3.
@@ -435,18 +513,54 @@ export class Canvas2DRenderer implements IRenderer {
 
     // Columns sized from worst-case text, so they never overlap at any HUD
     // size and don't shuffle as the digits change.
-    const cols: [text: string, widest: string][] = [
+    let cols: [text: string, widest: string][] = [
       [`LAP ${laps}`, "LAP 00/00"],
       [`BEST ${best}`, "BEST 00:00.000"],
       [`LAST ${last}`, "LAST 00:00.000"],
       [`NOW ${formatLap(cur)}`, "NOW 00:00.000"],
     ];
+    // A narrow screen (a phone) drops LAST, then shrinks the HUD until the
+    // columns and the position readout fit across it.
+    ctx.save();
+    ctx.font = "16px system-ui, sans-serif";
+    const widthAt1 = (cs: typeof cols): number =>
+      cs.reduce(
+        (sum, [, widest]) => sum + ctx.measureText(widest).width + 24,
+        0,
+      ) + 90; // "P 4/4" on the right
+    let fit = (w - 2 * pad) / widthAt1(cols);
+    if (fit < 0.8) {
+      cols = cols.filter((_, i) => i !== 2);
+      fit = (w - 2 * pad) / widthAt1(cols);
+    }
+    const s = Math.max(0.55, Math.min(this.hudScale, fit));
+    const barH = 48 * s;
+    const row1 = 8 * s;
+    const row2 = 28 * s;
+    const font = `${16 * s}px system-ui, sans-serif`;
+    ctx.font = font;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(0, 0, w, barH);
+    ctx.fillStyle = "#fff";
+
     let x = pad;
+    let nowX = pad;
     for (const [text, widest] of cols) {
+      nowX = x;
       ctx.fillText(text, x, row1);
       x += ctx.measureText(widest).width + 24 * s;
     }
-    ctx.fillText(trackName, pad, row2);
+    ctx.fillText(track.def.name, pad, row2);
+    // Live split vs the ghost, under the lap timer it qualifies.
+    if (scene.splitMs !== undefined) {
+      const c = splitColors(this.colorMode);
+      ctx.font = `bold ${16 * s}px system-ui, sans-serif`;
+      ctx.fillStyle = scene.splitMs < 0 ? c.ahead : c.behind;
+      ctx.fillText(formatSplit(scene.splitMs), nowX, row2);
+      ctx.font = font;
+      ctx.fillStyle = "#fff";
+    }
 
     // Position + FPS, right-aligned in the bar (the minimap sits below it).
     ctx.textAlign = "right";
@@ -471,7 +585,17 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.fillText(`SPD ${kmh} km/h`, boxX + 10 * s, boxY + 13 * s);
 
     // minimap top-right, under the bar
-    if (car) this.drawMinimap(ctx, track, car, w, barH + pad, rivals);
+    if (car)
+      this.drawMinimap(
+        ctx,
+        track,
+        car,
+        w,
+        barH + pad,
+        s,
+        rivals,
+        scene.ghostCar,
+      );
 
     ctx.restore();
   }
@@ -482,11 +606,13 @@ export class Canvas2DRenderer implements IRenderer {
     car: Matter.Body,
     w: number,
     top: number,
+    hudScale: number,
     rivals?: Matter.Body[],
+    ghost?: { x: number; y: number; alpha: number },
   ): void {
     const pad = 12;
-    const mapW = Math.round(160 * this.hudScale);
-    const mapH = Math.round(100 * this.hudScale);
+    const mapW = Math.round(160 * hudScale);
+    const mapH = Math.round(100 * hudScale);
     const mapX = w - mapW - pad;
     const mapY = top;
 
@@ -498,7 +624,10 @@ export class Canvas2DRenderer implements IRenderer {
 
     // fit the road (centerline +/- half width) into the box
     const half = track.width / 2;
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
     for (const p of track.centerLine) {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
@@ -547,17 +676,102 @@ export class Canvas2DRenderer implements IRenderer {
     const dot = (b: Matter.Body, color: string, r: number): void => {
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(offX + b.position.x * scale, offY + b.position.y * scale, r, 0, Math.PI * 2);
+      ctx.arc(
+        offX + b.position.x * scale,
+        offY + b.position.y * scale,
+        r,
+        0,
+        Math.PI * 2,
+      );
       ctx.fill();
       ctx.stroke();
     };
     ctx.strokeStyle = "#000";
     ctx.lineWidth = 1;
     for (const r of rivals ?? []) dot(r, pal.rival, 2.5);
+    // The ghost: a hollow ring, so it never hides (or reads as) a car.
+    if (ghost !== undefined && ghost.alpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = ghost.alpha;
+      ctx.strokeStyle = "#dff4ff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(
+        offX + ghost.x * scale,
+        offY + ghost.y * scale,
+        3.5,
+        0,
+        Math.PI * 2,
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
     dot(car, pal.player, 3.5);
   }
 
-  private drawConfetti(ctx: CanvasRenderingContext2D, w: number, h: number, ageMs: number): void {
+  /**
+   * Start lights over the grid: three red lamps light one per second of the
+   * countdown under a big numeral, then all go green with a "GO!" that fades.
+   * `t` is ms relative to GO (negative while counting down).
+   */
+  private drawStartLights(w: number, h: number, t: number): void {
+    if (t >= GO_FLASH_MS) return;
+    const { ctx } = this;
+    const s = this.hudScale;
+    const go = t >= 0;
+    const n = go ? 0 : Math.ceil(-t / 1000); // 3, 2, 1
+    // 0..1 through the current second (or through the GO flash).
+    const e = go ? t / GO_FLASH_MS : (n * 1000 + t) / 1000;
+    const lit = go ? 3 : 4 - n;
+    const cx = w / 2;
+    const cy = h * 0.28;
+    const r = 13 * s;
+    const gap = 38 * s;
+    ctx.save();
+    ctx.globalAlpha = go ? Math.min(1, (GO_FLASH_MS - t) / 300) : 1;
+
+    ctx.fillStyle = "rgba(10,12,14,0.85)";
+    ctx.beginPath();
+    const pw = gap * 2 + r * 2 + 20 * s;
+    const ph = r * 2 + 16 * s;
+    if (typeof ctx.roundRect === "function")
+      ctx.roundRect(cx - pw / 2, cy - ph / 2, pw, ph, 10 * s);
+    else ctx.rect(cx - pw / 2, cy - ph / 2, pw, ph);
+    ctx.fill();
+    for (let i = 0; i < 3; i++) {
+      const on = i < lit;
+      const color = go ? "#3dff7a" : on ? "#ff3b30" : "#3a1512";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = on ? 18 * s : 0;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(cx + (i - 1) * gap, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // The numeral bursts in big and settles each second.
+    const text = go ? "GO!" : String(n);
+    const size = 72 * s * (1 + 0.5 * Math.pow(1 - e, 3));
+    const ty = cy + ph / 2 + 52 * s;
+    ctx.font = `800 ${size}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 8 * s;
+    ctx.strokeStyle = "rgba(0,0,0,0.65)";
+    ctx.strokeText(text, cx, ty);
+    ctx.fillStyle = go ? "#7dff9b" : "#ffe9a8";
+    ctx.fillText(text, cx, ty);
+    ctx.restore();
+  }
+
+  private drawConfetti(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    ageMs: number,
+  ): void {
     const duration = 1600;
     if (ageMs > duration) return;
     const t = ageMs / 1000;

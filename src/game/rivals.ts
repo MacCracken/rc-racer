@@ -29,7 +29,12 @@ export function rivalStatsFor(def: TrackDef): CarStats {
     owned[slot] = Math.min(maxTierFor(slot), Math.max(0, Math.floor(r.tier)));
   const s = applyBuild({ ...rivalCarFor(def).base }, owned);
   const f = r.factor ?? 1;
-  return { ...s, maxSpeed: s.maxSpeed * f, accel: s.accel * f, grip: s.grip * f };
+  return {
+    ...s,
+    maxSpeed: s.maxSpeed * f,
+    accel: s.accel * f,
+    grip: s.grip * f,
+  };
 }
 
 /**

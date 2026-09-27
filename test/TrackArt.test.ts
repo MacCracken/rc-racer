@@ -35,7 +35,9 @@ describe("scenery placement", () => {
         for (let j = i + 1; j < items.length; j++) {
           const a = items[i];
           const b = items[j];
-          expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(a.r + b.r);
+          expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(
+            a.r + b.r,
+          );
         }
     }
   });

@@ -10,25 +10,56 @@ tracks.** Depth comes from two places: a car that _feels_ good to drive
 (traction, drift, weight, downforce), and a meaningful upgrade tree across many
 stats and many tracks.
 
-The game is playable (`npm run dev`). See **[roadmap.md](./roadmap.md)**
-for the phase-by-phase build path.
+**Play:** <https://maccracken.github.io/rc-racer/> once GitHub Pages is
+enabled for the repo (one setting — see [DEPLOY.md](./DEPLOY.md)). Locally:
+`npm install && npm run dev`.
 
-- Concept: see `CONCEPT.md`
-- Roadmap: see `roadmap.md`
+- Concept: [CONCEPT.md](./CONCEPT.md) · Roadmap: [roadmap.md](./roadmap.md) ·
+  Task list: [TASKS.md](./TASKS.md)
+
+## Controls
+
+Keyboard, gamepad and touch all work, even at once. Keys are rebindable in
+Settings.
+
+|                   | Keyboard              | Gamepad                              | Touch (phones/tablets)          |
+| ----------------- | --------------------- | ------------------------------------ | ------------------------------- |
+| Drive             | WASD or arrows        | left stick / d-pad; RT gas, LT brake | ◀ ▶ (left), GAS / BRAKE (right) |
+| Drift (handbrake) | Space                 | A or RB                              | DRIFT                           |
+| Pause             | Esc or P              | Start                                | ⏸ Pause                         |
+| Restart / menu    | R / Q (or pause menu) | pause menu                           | pause menu                      |
+
+Races start on a 3-2-1 countdown. Credits pay for finishing, more for a
+podium, plus a bonus for a best lap under the track's par. After your first
+finish on a track, a ghost car replays your best lap and the timer shows a
+live split against it.
+
+## Development
+
+```bash
+npm run dev           # dev server with HMR
+npm test              # unit + headless sim tests (Vitest)
+npm run e2e           # build, then browser smoke tests (Playwright/Chromium)
+npm run typecheck && npm run lint && npm run format:check
+npm run build         # production build to dist/
+```
+
+CI runs all of the above on every PR to `main`; pushes to `main` deploy to
+GitHub Pages.
 
 ## Status
 
 Phase 0 ✅ Scaffolding & loop — Vite + TypeScript + Vitest + ESLint + Prettier, fixed-timestep loop, `IInput` / `IRenderer` seams.
 
-Phase 1 ✅ Vertical slice — Matter.js top-down car with traction/drift, data-authored tracks, look-ahead camera, HUD, lap timer. 3 tracks, `tuning.ts` Vehicle Model, 17 unit tests.
+Phase 1 ✅ Vertical slice — Matter.js top-down car with traction/drift, data-authored tracks, look-ahead camera, HUD, lap timer.
 
-Phase 2 ✅ Progression loop — stats/upgrades data-driven, credits economy, versioned localStorage save, `Progression` orchestrator, AI autopilot, multi-car arena, menu/garage/results UI. Headless proof shows upgrades make you faster.
+Phase 2 ✅ Progression loop — data-driven stats/upgrades, credits economy, versioned save, AI rivals, menu/garage/results. Headless proof that upgrades make you faster.
 
-Phase 3 🚧 IN PROGRESS — Content scale + polish. Shipped & headless-verified: 6 tracks, 3 car classes incl. 1/8 Brawler, content QA guard, skid marks model, audio event seam, ghost replay + save v2 migration, fixed camera follow. Remaining for browser confirmation: curved curbs, tire smoke, finish confetti, minimap, ghost-line visual render, WebAudio playback, onboarding how-to, track visualizer/JSON import.
+Phase 3 ✅ Content + polish — 6 tracks, 3 car classes, skid marks + tyre smoke, curbs, minimap, confetti, ghost line, engine voice + tyre squeal, first-launch How to Play, save migration. All browser-verified. (The track editor moved to Phase 5.)
 
-Phase 4 🚧 Feel tuning + release demo. Done & headless-verified so far: FPS HUD, 400-mark skid cap, **a real Settings screen** — key remap (click a binding, press a key; captured live, persisted to the versioned save v3, applied to the `KeyboardInput` KeyMap), a **colorblind mode** toggle (amber/blue ↔ deuteranopia-safe orange/blue, driven through the renderer), and **sm/md/lg HUD sizing** — with `game/settings.ts` + 13 tests in `test/game/Settings.test.ts`. Still pending browser confirmation: 60fps on a low-end machine, the visuals above, key-remap UX in the DOM, and **deploy + first-run video**.
+Phase 4 🚧 Tune + release — nearly there. Done: settings (key remap, colorblind mode, HUD size, mute), touch + gamepad input and a phone layout, start countdown, pause (auto on focus loss), podium bonus with itemised results, 2–3× faster rendering at high resolutions, a GitHub Pages deploy workflow, and Playwright smoke tests in CI. **Left, needing a person:** enable Pages and merge to `main` (→ public URL), a feel-tuning pass driving every car on every track, a 60fps check on a real low-end laptop, a listen to the new engine mix, and the 60-second first-run video.
 
-Next action: **Confirm the settings visuals in a browser, then Phase 4 release — tuning pass, 60fps profiling + pooling, deploy to a static host, and a 60-sec video.**
+Phase 5 🚧 Started — ghost-car racing with a live split, and mobile/touch input are in. See [roadmap.md](./roadmap.md) for the rest.
 
 ## Why this stack (short version)
 

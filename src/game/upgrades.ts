@@ -225,7 +225,12 @@ export const UPGRADE_TREE: UpgradeSlot[] = [
     id: "drift",
     name: "Drift Kit",
     tiers: [
-      t("E-brake", 100, { handbrakeGrip: -0.002 }, "Initiate slides on demand."),
+      t(
+        "E-brake",
+        100,
+        { handbrakeGrip: -0.002 },
+        "Initiate slides on demand.",
+      ),
       t(
         "Differential",
         240,

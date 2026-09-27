@@ -53,9 +53,9 @@ export interface Pose {
 
 /**
  * Replayed pose at lap-relative time `t`, linearly interpolated between the two
- * bracketing frames. Clamps to the ends outside the recorded span. Returns null
- * for an empty ghost. `x`/`y` are the visual-critical values (precise);
- * `heading` takes the nearest frame's — fine for a demo, trivially correct.
+ * bracketing frames (heading the short way round, so a ghost crossing ±π
+ * doesn't spin). Clamps to the ends outside the recorded span. Returns null
+ * for an empty ghost.
  */
 export function sampleGhost(g: Ghost, t: number): Pose | null {
   if (g.length === 0) return null;
@@ -74,11 +74,13 @@ export function sampleGhost(g: Ghost, t: number): Pose | null {
   const a = g[lo];
   const b = g[hi];
   const f = (t - a.t) / (b.t - a.t || 1);
+  let turn = (b.heading - a.heading) % (Math.PI * 2);
+  if (turn > Math.PI) turn -= Math.PI * 2;
+  else if (turn < -Math.PI) turn += Math.PI * 2;
   return {
     x: a.x + (b.x - a.x) * f,
     y: a.y + (b.y - a.y) * f,
-    // nearest (lower) frame keeps heading stable and the math exact.
-    heading: a.heading,
+    heading: a.heading + turn * f,
   };
 }
 
@@ -87,19 +89,33 @@ function poseFrom(p: GhostPoint): Pose {
 }
 
 /**
- * Build a ghost from a single lap's samples. `startMs` is the lap's origin so
- * times become lap-relative. Samples at or before `startMs` are dropped.
+ * One raw step of a lap in progress: clock time, position, the step's
+ * movement, and (when known) the body's heading.
  */
-export function recordLap(
-  samples: { ms: number; x: number; y: number; dx: number; dy: number }[],
-  startMs: number,
-): Ghost {
+export interface LapSample {
+  ms: number;
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+  heading?: number;
+}
+
+/**
+ * Build a ghost from a single lap's samples. `startMs` is the lap's origin so
+ * times become lap-relative. Samples at or before `startMs` are dropped. Each
+ * frame keeps the body's heading when the sample has one (a drifting car
+ * points off its line of travel), else faces the way it moved.
+ */
+export function recordLap(samples: LapSample[], startMs: number): Ghost {
   const pts: GhostPoint[] = [];
   let lastHeading = 0;
   for (const s of samples) {
     const t = s.ms - startMs;
     if (t < 0) continue;
-    lastHeading = (s.dx || s.dy) !== 0 ? Math.atan2(s.dy, s.dx) : lastHeading;
+    if (s.heading !== undefined && Number.isFinite(s.heading))
+      lastHeading = s.heading;
+    else if ((s.dx || s.dy) !== 0) lastHeading = Math.atan2(s.dy, s.dx);
     pts.push({ t, x: s.x, y: s.y, heading: lastHeading });
   }
   return capGhost(makeGhost(pts));
