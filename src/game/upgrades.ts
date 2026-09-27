@@ -1,4 +1,5 @@
 import { KMH_PER_PX_S, type CarStats } from "../core/tuning.ts";
+import { carClasses } from "./cars.ts";
 
 /**
  * Upgrade tree, data-driven. Each *slot* (a component family) has a stack of
@@ -301,20 +302,48 @@ export interface StatBar {
 const STAT_META: {
   key: keyof CarStats;
   label: string;
-  absMax: number;
   /** Lower is better (less handbrake grip = a longer drift). */
   invert?: boolean;
 }[] = [
-  { key: "maxSpeed", label: "Top speed", absMax: 360 },
-  { key: "accel", label: "Acceleration", absMax: 260 },
-  { key: "grip", label: "Grip", absMax: 0.4 },
-  { key: "braking", label: "Braking", absMax: 400 },
-  { key: "turnRate", label: "Handling", absMax: 5.5 },
-  { key: "handbrakeGrip", label: "Drift", absMax: 0.05, invert: true },
+  { key: "maxSpeed", label: "Top speed" },
+  { key: "accel", label: "Acceleration" },
+  { key: "grip", label: "Grip" },
+  { key: "braking", label: "Braking" },
+  { key: "turnRate", label: "Handling" },
+  { key: "handbrakeGrip", label: "Drift", invert: true },
 ];
+
+/** Handbrake grip that would read as a full Drift bar (none at all is 0). */
+const DRIFT_SCALE = 0.05;
+
+/** Every slot at its top tier: the most a car can be built up. */
+export function fullBuild(): OwnedUpgrades {
+  const owned = freshUpgrades();
+  for (const s of UPGRADE_TREE) owned[s.id] = s.tiers.length;
+  return owned;
+}
+
+let scales: Partial<Record<keyof CarStats, number>> | null = null;
+
+/**
+ * A bar's full scale: the best any car class reaches fully built. So 100 means
+ * "the best build in the game", and no bar tops out while an upgrade that
+ * raises it is still for sale — a full bar would hide that purchase.
+ */
+function barScale(key: keyof CarStats): number {
+  if (key === "handbrakeGrip") return DRIFT_SCALE;
+  if (scales === null) {
+    const built = carClasses.map((c) => applyBuild(c.base, fullBuild()));
+    scales = {};
+    for (const m of STAT_META)
+      scales[m.key] = Math.max(...built.map((s) => s[m.key]));
+  }
+  return scales[key] ?? 1;
+}
+
 export function statBars(stats: CarStats): StatBar[] {
   return STAT_META.map((m) => {
-    const ratio = Math.min(1, Math.max(0, stats[m.key] / m.absMax));
+    const ratio = Math.min(1, Math.max(0, stats[m.key] / barScale(m.key)));
     const norm = m.invert ? 1 - ratio : ratio;
     return {
       key: m.key,
@@ -327,6 +356,44 @@ export function statBars(stats: CarStats): StatBar[] {
           : String(Math.round(norm * 100)),
     };
   });
+}
+
+/** How one stat bar moves between two builds: the garage's upgrade preview. */
+export interface StatGain {
+  key: keyof CarStats;
+  label: string;
+  /** Bar fill before and after, 0..1. */
+  from: number;
+  to: number;
+  /** The change as the bars read it: "+7 km/h" for top speed, else "+8". */
+  text: string;
+}
+
+/**
+ * The stat bars that change from `before` to `after` (e.g. the car now and
+ * with the next tier fitted). Differences are taken between the *displayed*
+ * readouts, so the preview always matches what the bars show once bought.
+ */
+export function statGains(before: CarStats, after: CarStats): StatGain[] {
+  const now = statBars(before);
+  const next = statBars(after);
+  const out: StatGain[] = [];
+  now.forEach((bar, i) => {
+    const kmh = bar.key === "maxSpeed";
+    const d = kmh
+      ? Math.round(after.maxSpeed * KMH_PER_PX_S) -
+        Math.round(before.maxSpeed * KMH_PER_PX_S)
+      : Math.round(next[i].norm * 100) - Math.round(bar.norm * 100);
+    if (d === 0) return;
+    out.push({
+      key: bar.key,
+      label: bar.label,
+      from: bar.norm,
+      to: next[i].norm,
+      text: `${d > 0 ? "+" : "−"}${Math.abs(d)}${kmh ? " km/h" : ""}`,
+    });
+  });
+  return out;
 }
 
 function applyDelta(stats: CarStats, delta: Partial<CarStats>): CarStats {

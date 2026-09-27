@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   applyBuild,
   freshUpgrades,
+  fullBuild,
+  statBars,
+  statGains,
   UPGRADE_TREE,
+  type SlotId,
 } from "../../src/game/upgrades.ts";
 import {
   computeReward,
@@ -185,6 +189,60 @@ describe("Economy — podium bonus and the reward's parts", () => {
       expect(base).toBe(60 + 3 * 8);
       if (!(best > 0 && best < 4000)) expect(pace).toBe(0);
       else expect(pace).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("Upgrade preview — what a purchase does to the bars", () => {
+  const sedan = carClasses.find((c) => c.id === "street-sedan")!.base;
+  const withTier = (slot: SlotId, n: number): CarStats => {
+    const owned = freshUpgrades();
+    owned[slot] = n;
+    return applyBuild(sedan, owned);
+  };
+
+  it("names just the bars a tier moves, in the units the bars read", () => {
+    const after = withTier("engine", 1);
+    const gains = statGains(sedan, after);
+    expect(gains.map((g) => g.key)).toEqual(["maxSpeed", "accel"]);
+    expect(gains[0].text).toBe("+7 km/h"); // 108 -> 115 km/h on the speedo
+    const read = (s: CarStats) =>
+      Number(statBars(s).find((b) => b.key === "accel")!.text);
+    expect(gains[1].text).toBe(`+${read(after) - read(sedan)}`);
+    expect(gains[1].to).toBeGreaterThan(gains[1].from);
+  });
+
+  it("counts a longer slide (less handbrake grip) as a Drift gain", () => {
+    const gains = statGains(sedan, withTier("drift", 1));
+    expect(gains.map((g) => g.label)).toEqual(["Drift"]);
+    expect(gains[0].text).toMatch(/^\+\d+$/);
+  });
+
+  it("every tier visibly moves a bar, even on a car built up everywhere else", () => {
+    // A bar that tops out early hides every later purchase that raises it.
+    for (const car of carClasses) {
+      for (const slot of UPGRADE_TREE) {
+        const owned = fullBuild();
+        for (let k = 1; k <= slot.tiers.length; k++) {
+          owned[slot.id] = k - 1;
+          const before = applyBuild(car.base, owned);
+          owned[slot.id] = k;
+          const gains = statGains(before, applyBuild(car.base, owned));
+          expect(
+            gains.length,
+            `${car.id} ${slot.id} tier ${k}`,
+          ).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+
+  it("a fully built car fills its best bars, and no bar overflows", () => {
+    for (const car of carClasses) {
+      for (const bar of statBars(applyBuild(car.base, fullBuild()))) {
+        expect(bar.norm).toBeGreaterThan(0);
+        expect(bar.norm).toBeLessThanOrEqual(1);
+      }
     }
   });
 });

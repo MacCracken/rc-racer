@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildTrack } from "../../src/track/Track.ts";
 import { tracks } from "../../src/track/tracks.ts";
-import { createCarWorld, stepCar } from "../../src/physics/MatterCar.ts";
+import { createArena, stepCar } from "../../src/physics/MatterCar.ts";
 import { RaceState } from "../../src/race/RaceState.ts";
 import { makeDriver } from "../../src/race/AiDriver.ts";
 import { FIXED_DT } from "../../src/core/tuning.ts";
@@ -27,8 +27,9 @@ const sedanStats = applyBuild(
 function lapsClosed(trackId: string): number {
   const def = tracks.find((t) => t.id === trackId)!;
   const track = buildTrack(def);
-  const world = createCarWorld(track);
-  const car = world.car;
+  // As the game races it: the arena applies the track's conditions.
+  const arena = createArena(track, sedanStats);
+  const { body: car, stats } = arena.cars[0];
   let clockMs = 0;
   const race = new RaceState(track, () => clockMs);
   const driver = makeDriver(track, {
@@ -43,7 +44,7 @@ function lapsClosed(trackId: string): number {
       velocity: car.velocity,
       angle: car.angle,
     });
-    stepCar(car, world.walls, track, input, sedanStats, dt);
+    stepCar(car, arena.walls, track, input, stats, dt);
     const cur = { x: car.position.x, y: car.position.y };
     race.update(prev, cur);
     prev = cur;
@@ -100,8 +101,8 @@ describe("Content catalog — tracks are drivable, cars are distinct", () => {
   it("a full race records a non-empty, time-ascending ghost", () => {
     const def = tracks[0];
     const track = buildTrack(def);
-    const world = createCarWorld(track);
-    const car = world.car;
+    const arena = createArena(track, sedanStats);
+    const { body: car, stats } = arena.cars[0];
     let clockMs = 0;
     const race = new RaceState(track, () => clockMs);
     const driver = makeDriver(track, {
@@ -117,7 +118,7 @@ describe("Content catalog — tracks are drivable, cars are distinct", () => {
         velocity: car.velocity,
         angle: car.angle,
       });
-      stepCar(car, world.walls, track, input, sedanStats, dt);
+      stepCar(car, arena.walls, track, input, stats, dt);
       const cur = { x: car.position.x, y: car.position.y };
       race.update(prev, cur);
       prev = cur;

@@ -127,6 +127,22 @@ describe("Progression — earn / spend / record", () => {
     expect(p.recordRace(race).unlockedCar).toBeNull(); // already affordable
   });
 
+  it("names the track a first clear unlocks, once", () => {
+    const p = Progression.fresh();
+    const race = {
+      trackId: "overture",
+      carId: "street-sedan",
+      laps: 3,
+      bestLapMs: 18000,
+      finished: true,
+    };
+    expect(p.recordRace({ ...race, finished: false }).unlockedTrack).toBeNull();
+    expect(p.isTrackUnlocked(1)).toBe(false);
+    expect(p.recordRace(race).unlockedTrack).toBe("hairpin");
+    expect(p.isTrackUnlocked(1)).toBe(true);
+    expect(p.recordRace(race).unlockedTrack).toBeNull(); // already open
+  });
+
   it("cannot select (and so race) a car it doesn't own", () => {
     const p = Progression.fresh();
     expect(p.selectCar("brawler")).toBe(false);
@@ -267,5 +283,47 @@ describe("Progression — the outcome names the par it paid against", () => {
     };
     expect(p.recordRace({ ...race, trackId: "overture" }).parMs).toBe(18000);
     expect(p.recordRace({ ...race, trackId: "nowhere" }).parMs).toBe(4000);
+  });
+});
+
+describe("Progression — your best laps per track", () => {
+  const lap = (ms: number, finished = true) => ({
+    trackId: "overture",
+    carId: "street-sedan",
+    laps: 3,
+    bestLapMs: ms,
+    finished,
+    at: 1_700_000_000_000,
+  });
+
+  it("puts each finished race's best lap on the track's board, and says where", () => {
+    const p = Progression.fresh();
+    expect(p.recordRace(lap(18000)).boardRank).toBe(1); // a new record
+    expect(p.recordRace(lap(18500)).boardRank).toBe(2);
+    expect(p.recordRace(lap(17900)).boardRank).toBe(1);
+    expect(p.recordsFor("overture").map((r) => r.ms)).toEqual([
+      17900, 18000, 18500,
+    ]);
+    expect(p.recordsFor("overture")[0]).toEqual({
+      ms: 17900,
+      car: "street-sedan",
+      at: 1_700_000_000_000,
+    });
+  });
+
+  it("keeps only the best few: a slow lap off the board ranks nowhere", () => {
+    const p = Progression.fresh();
+    for (const ms of [18000, 18100, 18200, 18300, 18400]) p.recordRace(lap(ms));
+    expect(p.recordRace(lap(19000)).boardRank).toBeNull();
+    expect(p.recordsFor("overture")).toHaveLength(5);
+    expect(p.recordRace(lap(18050)).boardRank).toBe(2);
+    expect(p.recordsFor("overture").at(-1)!.ms).toBe(18300);
+  });
+
+  it("an unfinished race, or a lap that isn't one, never reaches the board", () => {
+    const p = Progression.fresh();
+    expect(p.recordRace(lap(18000, false)).boardRank).toBeNull();
+    expect(p.recordRace(lap(-5)).boardRank).toBeNull();
+    expect(p.recordsFor("overture")).toEqual([]);
   });
 });

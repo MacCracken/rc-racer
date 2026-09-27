@@ -4,6 +4,7 @@ import {
   distToCenterLine,
   foliageFor,
   hashString,
+  roadColor,
   rng,
   sceneryFor,
 } from "../src/core/trackArt.ts";
@@ -72,5 +73,14 @@ describe("shade", () => {
   it("passes anything that isn't #rrggbb through untouched", () => {
     expect(shade("red", 0.5)).toBe("red");
     expect(shade("#abc", 0.5)).toBe("#abc");
+  });
+});
+
+describe("road colour", () => {
+  it("is the track's own, or stock asphalt or dirt to suit its terrain", () => {
+    const plain = { ...tracks[0], surface: undefined };
+    expect(roadColor(plain)).toBe("#39404a");
+    expect(roadColor({ ...plain, terrain: "dirt" })).toBe("#6b5636");
+    expect(roadColor({ ...plain, surface: "#123456" })).toBe("#123456");
   });
 });

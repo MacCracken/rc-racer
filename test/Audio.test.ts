@@ -117,6 +117,51 @@ describe("WebAudio — when the audio context gets created", () => {
     expect(made.count).toBe(1);
   });
 
+  it("rain starts once there's sound, even when the game booted muted", () => {
+    // A context that can build the looping voices, noting each gain's target.
+    const param = () => ({
+      value: 0,
+      setTargetAtTime(v: number) {
+        this.value = v;
+      },
+    });
+    const node = () => ({
+      gain: param(),
+      frequency: param(),
+      Q: param(),
+      detune: param(),
+      connect: <T>(to: T): T => to,
+      start() {},
+      stop() {},
+    });
+    class FakeCtx {
+      state = "running";
+      currentTime = 0;
+      sampleRate = 100;
+      destination = node();
+      createGain = node;
+      createBiquadFilter = node;
+      createOscillator = node;
+      createBufferSource = node;
+      createBuffer(_channels: number, length: number, rate: number) {
+        return {
+          duration: length / rate,
+          getChannelData: () => new Float32Array(length),
+        };
+      }
+    }
+    vi.stubGlobal("window", { AudioContext: FakeCtx });
+    const a = new WebAudio();
+    a.setMuted(true); // booted muted: no sound to play…
+    a.setRain(true); // …in a wet race
+    a.setMuted(false); // the player unmutes
+    a.setRain(true); // the next frame
+    const loops = (
+      a as unknown as { loops: { rain: { gain: { value: number } } } | null }
+    ).loops;
+    expect(loops?.rain.gain.value).toBeCloseTo(0.045, 9);
+  });
+
   it("booting unmuted doesn't create one outside a user gesture", () => {
     const made = fakeBrowser();
     new WebAudio().setMuted(false);

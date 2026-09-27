@@ -4,14 +4,22 @@
  * results panels. The Game director installs the string and handles clicks via
  * a single delegated listener, so panels are cheap to rebuild and re-render.
  */
-import type { StatBar } from "../game/upgrades.ts";
+import type { StatBar, StatGain } from "../game/upgrades.ts";
+import type { TrackOutline } from "../track/outline.ts";
 import type { RaceOutcome } from "../game/progression.ts";
 import { keyLabel, type ColorMode, type HudSize } from "../core/theme.ts";
 import { formatLap, formatSplit } from "../race/RaceState.ts";
 import { defaultKeyMap, type KeyAction, type KeyMap } from "../core/Input.ts";
 
 export type Screen =
-  "menu" | "garage" | "race" | "results" | "onboarding" | "settings";
+  | "menu"
+  | "garage"
+  | "records"
+  | "race"
+  | "results"
+  | "replay"
+  | "onboarding"
+  | "settings";
 
 export interface CarRow {
   id: string;
@@ -38,6 +46,12 @@ export interface TrackRow {
   rivals?: string;
   /** Your best lap here, formatted, once you have one. */
   bestLabel?: string;
+  /** What opens a locked track, e.g. "Clear Hairpin to unlock". */
+  lockHint?: string;
+  /** Its conditions, if any: "Dirt", "Rain", "Night". */
+  tags?: string[];
+  /** Its shape, for a thumbnail beside the name (see `track/outline.ts`). */
+  outline?: TrackOutline;
 }
 
 export interface UpgradeRow {
@@ -51,6 +65,8 @@ export interface UpgradeRow {
   /** The next tier's name + what it does, so a purchase isn't a blind buy. */
   nextName?: string;
   nextDesc?: string;
+  /** The stat bars the next tier moves, and by how much. */
+  gains?: StatGain[];
 }
 
 export interface UiModel {
@@ -73,6 +89,30 @@ export interface ResultsView {
   parMs?: number;
   /** Display name of `outcome.unlockedCar` (falls back to its id). */
   unlockedCarName?: string;
+  /** The next track in the ladder, when it's open to race. */
+  nextTrack?: { id: string; name: string };
+  /** A replay of the race is there to watch. */
+  canReplay?: boolean;
+  /** The track's name, for "3rd of your best laps on <track>". */
+  trackName?: string;
+}
+
+/** A track's board on the Records screen. */
+export interface RecordsRow {
+  id: string;
+  name: string;
+  tags?: string[];
+  outline?: TrackOutline;
+  /** Your best laps there, fastest first, ready to show. */
+  laps: { time: string; car: string; date: string }[];
+}
+
+export interface RecordsView {
+  tracks: RecordsRow[];
+  /** The track whose best lap was just copied, to say so… */
+  copied?: string | null;
+  /** …or, where the clipboard refused, the line to copy by hand. */
+  byHand?: { id: string; text: string } | null;
 }
 
 /** A single rebindable key binding, as shown in the settings panel. */
@@ -171,15 +211,22 @@ export function menuHtml(m: UiModel): string {
         .filter(Boolean)
         .join(" ");
       const clear = t.cleared ? " ✓" : "";
-      const about = [t.vibe, t.rivals]
-        .filter(Boolean)
-        .map((s) => esc(s!))
-        .join(" · ");
+      // A locked track says what opens it instead of its flavour line.
+      const about =
+        locked && t.lockHint
+          ? `🔒 ${esc(t.lockHint)}`
+          : [t.vibe, t.rivals]
+              .filter(Boolean)
+              .map((s) => esc(s!))
+              .join(" · ");
       return `
           <button class="${cls}" data-selecttrack="${t.id}"${locked ? " disabled" : ""}>
-           <span class="track-name">${esc(t.name)}</span>
+           ${outlineSvg(t.outline, t.tags)}
+           <span class="track-text">
+           <span class="track-name">${esc(t.name)}${tagsHtml(t.tags)}</span>
            <span class="track-meta">${t.laps} laps · par ${esc(t.parLabel)}${t.bestLabel ? ` · best <b>${esc(t.bestLabel)}</b>` : ""}${t.difficulty !== undefined ? " · " + "●".repeat(t.difficulty) : ""}${clear}</span>
            ${about ? `<span class="track-about">${about}</span>` : ""}
+           </span>
           </button>`;
     })
     .join("");
@@ -203,6 +250,7 @@ export function menuHtml(m: UiModel): string {
       <div class="menu-footer">
         <button class="primary" data-action="start">▶ Start race${selected ? ` · ${esc(selected.name)}` : ""}</button>
         <button class="ghost" data-action="garage">Garage</button>
+        <button class="ghost" data-action="records">Records</button>
         <button class="ghost" data-action="howto">How to Play</button>
         <button class="ghost" data-action="settings">Settings</button>
         <div class="hint">${esc(controlsHint(m.keyMap))}</div>
@@ -210,21 +258,75 @@ export function menuHtml(m: UiModel): string {
     </div>`;
 }
 
+/** Thumbnail box (px) a track's outline is fitted to. */
+export const THUMB_W = 64;
+export const THUMB_H = 44;
+
+/** A track's shape, tinted by its conditions (nothing without one). */
+function outlineSvg(o: TrackOutline | undefined, tags: string[] = []): string {
+  if (o === undefined || o.d === "") return "";
+  const tint = tags.map((tag) => ` thumb-${esc(tag.toLowerCase())}`);
+  return `<svg class="track-thumb${tint.join("")}" viewBox="0 0 ${THUMB_W} ${THUMB_H}" aria-hidden="true"><path d="${esc(o.d)}" stroke-width="${o.road.toFixed(1)}"/><circle cx="${o.start.x}" cy="${o.start.y}" r="2.6"/></svg>`;
+}
+
+/** Condition tags beside a track's name. */
+function tagsHtml(tags: string[] = []): string {
+  return tags
+    .map(
+      (tag) =>
+        ` <span class="tag tag-${esc(tag.toLowerCase())}">${esc(tag)}</span>`,
+    )
+    .join("");
+}
+
 // --- GARAGE ----------------------------------------------------------------
 
+/** A 0..1 bar fill as a CSS percentage (one decimal). */
+const pct = (n: number): number =>
+  Math.round(Math.max(0, Math.min(1, n)) * 1000) / 10;
+
+/** A slot id safe to put in a CSS selector as it is (no escaping applies). */
+const CSS_SAFE = /^[a-z][a-z0-9-]*$/i;
+
 export function garageHtml(m: UiModel): string {
+  // Previewed slots go into a <style> rule, where HTML escapes don't apply:
+  // only plain identifiers make it there.
+  const buyable = m.upgrades.filter(
+    (u) => !u.maxed && u.gains?.length && CSS_SAFE.test(u.slot),
+  );
   const bars = m.statBars
     .map((b) => {
-      const pct = Math.round(Math.max(0, Math.min(1, b.norm)) * 100);
+      // Each upgrade's gain on this stat, lit while that upgrade is hovered
+      // or focused, so the bars preview a purchase before it's made.
+      const gains = buyable
+        .flatMap((u) =>
+          u
+            .gains!.filter((g) => g.key === b.key)
+            .map((g) => [u.slot, g] as const),
+        )
+        .map(([slot, g]) => {
+          const lo = pct(Math.min(g.from, g.to));
+          const width = pct(Math.max(g.from, g.to)) - lo;
+          return `<span class="bar-gain" data-gain="${esc(slot)}" style="left:${lo}%;width:${width}%"></span>`;
+        })
+        .join("");
       return `
       <div class="stat">
        <span class="stat-label">${esc(b.label)}</span>
-       <span class="bar"><span class="bar-fill" style="width:${pct}%"></span></span>
+       <span class="bar"><span class="bar-fill" style="width:${pct(b.norm)}%"></span>${gains}</span>
        <span class="stat-val">${esc(b.text)}</span>
       </div>`;
     })
     .join("");
+  const preview = buyable
+    .map(
+      (u) =>
+        `.screen-garage:has([data-buy="${u.slot}"]:is(:hover,:focus)) [data-gain="${u.slot}"]`,
+    )
+    .join(",");
 
+  // A key or pad player lands on the first upgrade they can still buy.
+  const firstOpen = m.upgrades.find((u) => !u.maxed)?.slot;
   const slots = m.upgrades
     .map((u) => {
       const cls = [
@@ -238,11 +340,18 @@ export function garageHtml(m: UiModel): string {
         u.maxed || u.nextName === undefined
           ? ""
           : `<span class="slot-next">Next: ${esc(u.nextName)}${u.nextDesc ? " — " + esc(u.nextDesc) : ""}</span>`;
+      const gains =
+        u.maxed || !u.gains?.length
+          ? ""
+          : `<span class="slot-gains">${u.gains
+              .map((g) => `${esc(g.label)} <b>${esc(g.text)}</b>`)
+              .join(" · ")}</span>`;
       return `
-      <button class="${cls}" data-buy="${u.slot}"${u.maxed ? " disabled" : ""}>
+      <button class="${cls}" data-buy="${esc(u.slot)}"${u.maxed ? " disabled" : ""}${u.slot === firstOpen ? " data-autofocus" : ""}>
         <span class="slot-info">
           <span class="slot-name">${esc(u.name)} <em>L${u.level}/${u.maxLevel}</em></span>
           ${next}
+          ${gains}
         </span>
         <span class="slot-cost">${u.maxed ? "MAX" : u.nextCost + " cr"}</span>
       </button>`;
@@ -264,6 +373,7 @@ export function garageHtml(m: UiModel): string {
 
   return `
     <div class="screen screen-garage">
+      ${preview ? `<style>${preview}{opacity:1}</style>` : ""}
       <div class="panel">
         <div class="panel-head">
           <button class="ghost" data-action="menu">◀ Menu</button>
@@ -314,9 +424,27 @@ export function resultsHtml(view: ResultsView): string {
     .filter(Boolean)
     .join(" · ");
   // `unlockedCar` is a car you can now *afford*; buying it is still your call.
+  const rank = outcome.boardRank;
+  const board =
+    rank !== null && rank > 1
+      ? `<div class="result-board">${ordinal(rank)} of your best laps${view.trackName ? ` on ${esc(view.trackName)}` : ""}</div>`
+      : "";
   const unlocked = outcome.unlockedCar
     ? `<div class="unlocks">★ New car affordable: ${esc(view.unlockedCarName ?? outcome.unlockedCar)} — unlock it from the menu</div>`
     : "";
+  // The ladder's next track, once open. The race that opens it makes racing
+  // there the obvious next step; otherwise running it back stays first.
+  const next = view.nextTrack;
+  const fresh = next !== undefined && outcome.unlockedTrack === next.id;
+  const opened = fresh
+    ? `<div class="unlocks">★ Track unlocked: ${esc(next.name)}</div>`
+    : "";
+  const again = (cls: string): string =>
+    `<button class="${cls}" data-action="raceagain">Race again</button>`;
+  const onward =
+    next === undefined
+      ? ""
+      : `<button class="${fresh ? "primary" : "ghost"}" data-action="nexttrack">Next: ${esc(next.name)} ▶</button>`;
   return `
     <div class="screen screen-results">
       <div class="panel results-panel">
@@ -326,11 +454,108 @@ export function resultsHtml(view: ResultsView): string {
         <div class="reward">+ ${outcome.creditsEarned} cr</div>
         <div class="reward-parts">${esc(parts)}</div>
         ${record}
+        ${board}
         ${unlocked}
+        ${opened}
         <div class="results-actions">
-          <button class="primary" data-action="raceagain">Race again</button>
+          ${fresh ? onward + again("ghost") : again("primary") + onward}
+          ${view.canReplay ? '<button class="ghost" data-action="replay">▶ Replay</button>' : ""}
           <button class="ghost" data-action="garage">Garage</button>
+          <button class="ghost" data-action="menu">Menu</button>
         </div>
+      </div>
+    </div>`;
+}
+
+// --- RECORDS ---------------------------------------------------------------
+
+/** 1 -> "1st", 2 -> "2nd", 11 -> "11th", 23 -> "23rd". */
+export function ordinal(n: number): string {
+  const teen = n % 100 >= 11 && n % 100 <= 13;
+  const suffix = teen ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th");
+  return `${n}${suffix}`;
+}
+
+/**
+ * Your best laps on every open track, fastest first, with the car and the
+ * day; each board's best can be copied to share.
+ */
+export function recordsHtml(v: RecordsView): string {
+  const boards = v.tracks
+    .map((t) => {
+      const laps =
+        t.laps.length === 0
+          ? '<div class="empty">No laps yet — finish a race here.</div>'
+          : `<ol class="board">${t.laps
+              .map(
+                (l) =>
+                  `<li><b>${esc(l.time)}</b><span>${esc(l.car)}</span><i>${esc(l.date)}</i></li>`,
+              )
+              .join("")}</ol>`;
+      const share =
+        t.laps.length === 0
+          ? ""
+          : `<button class="ghost share" data-share="${esc(t.id)}">${v.copied === t.id ? "Copied ✓" : "Copy best"}</button>`;
+      return `
+        <section class="board-card">
+          <div class="board-head">
+            ${outlineSvg(t.outline, t.tags)}
+            <span class="board-name">${esc(t.name)}${tagsHtml(t.tags)}</span>
+            ${share}
+          </div>
+          ${laps}
+          ${v.byHand?.id === t.id ? `<div class="share-text">Copy this: <span>${esc(v.byHand.text)}</span></div>` : ""}
+        </section>`;
+    })
+    .join("");
+  return `
+    <div class="screen screen-records">
+      <div class="panel">
+        <div class="panel-head">
+          <button class="ghost" data-action="menu">◀ Menu</button>
+          <span class="panel-title">Records</span>
+        </div>
+        <div class="boards">${boards}</div>
+      </div>
+    </div>`;
+}
+
+/**
+ * A line to share a best lap: the track, the time and the car, and where to
+ * play when the game is on the web.
+ */
+export function shareText(
+  track: string,
+  time: string,
+  car: string,
+  url?: string,
+): string {
+  const where = url !== undefined && /^https?:/.test(url) ? ` ${url}` : "";
+  return `RC Racer · ${track}: ${time}${car ? ` in the ${car}` : ""}. Beat it?${where}`;
+}
+
+// --- REPLAY ----------------------------------------------------------------
+
+/** Where a replay is: held (paused), at its end, and how fast it plays. */
+export interface ReplayView {
+  held: boolean;
+  atEnd: boolean;
+  speed: number;
+}
+
+/**
+ * Controls over a replay (the canvas shows the race and a REPLAY badge):
+ * play / pause — or watch again from the end — speed, and back to the
+ * results.
+ */
+export function replayHtml(v: ReplayView): string {
+  const play = v.atEnd ? "↺ Watch again" : v.held ? "▶ Play" : "⏸ Pause";
+  return `
+    <div class="screen screen-replay">
+      <div class="replay-controls">
+        <button class="primary" data-action="replay-toggle">${play}</button>
+        <button class="ghost" data-action="replay-speed" aria-label="Playback speed">${v.speed}×</button>
+        <button class="ghost" data-action="replay-exit">◀ Results</button>
       </div>
     </div>`;
 }
@@ -404,11 +629,12 @@ export function onboardingHtml(km: KeyMap): string {
        <div class="onboarding-panel">
          <div class="onboarding-title">How to Play — RC Racer</div>
          <div class="onboarding-body">
-           <p class="no-touch"><b>Drive:</b> ${esc(controlsHint(km))}. Hold the handbrake through a corner to drift. A gamepad works too (stick, triggers, A to drift, Start to pause).</p>
+           <p class="no-touch"><b>Drive:</b> ${esc(controlsHint(km))}. Hold the handbrake through a corner to drift. A gamepad works too (stick, triggers, A to drift, Start to pause). On the menus, the arrows or d-pad move, Enter or A picks, Esc or B goes back.</p>
            <p class="touch-only"><b>Drive:</b> ◀ ▶ under your left thumb steer; GAS and BRAKE are on the right. Hold DRIFT through a corner to slide.</p>
            <p><b>Race:</b> Go on the green light and complete the laps. Credits pay for finishing, more for a podium, and a bonus for a best lap under the track's par.</p>
            <p><b>Chase your ghost:</b> Once you've set a time, a ghost car replays your best lap; the timer shows how far ahead (−) or behind (+) you are.</p>
            <p><b>Earn → Upgrade → Go Faster:</b> Spend credits in the Garage on Engine, Tires, Brakes, Suspension, Aero, Chassis and Drift Kit — each changes real physics. Save up for faster car classes.</p>
+           <p><b>Conditions:</b> Dirt and rain cost everyone grip — rain lengthens braking too, and dirt slides further. At night you race by headlight.</p>
            <p><b>Progress:</b> Clear a track to unlock the next.</p>
          </div>
          <div class="onboarding-actions">

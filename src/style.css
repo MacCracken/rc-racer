@@ -107,6 +107,9 @@ body {
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
+  /* One width per column, not one per label. */
+  width: 100%;
+  box-sizing: border-box;
   text-align: left;
   background: #14201a;
   border: 1px solid #263a30;
@@ -132,6 +135,48 @@ body {
 .track-row.selected {
   border-color: #7dff9b;
   background: #1b2e25;
+}
+
+/* A track row: its outline, then the name and details beside it. */
+.track-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.track-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.track-thumb {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 44px;
+}
+
+.track-thumb path {
+  fill: none;
+  stroke: #8d99a6;
+  stroke-linejoin: round;
+}
+
+.track-thumb circle {
+  fill: #f4f4f4;
+}
+
+.thumb-dirt path {
+  stroke: #c8a46a;
+}
+
+.thumb-rain path {
+  stroke: #7fb6e8;
+}
+
+.thumb-night path {
+  stroke: #9c9ee8;
 }
 
 .car-row.not-owned {
@@ -180,6 +225,32 @@ body {
   color: #7f968a;
 }
 
+/* A track's conditions, beside its name. */
+.tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  vertical-align: 2px;
+  color: #0b120e;
+}
+
+.tag-dirt {
+  background: #c8a46a;
+}
+
+.tag-rain {
+  background: #7fb6e8;
+}
+
+.tag-night {
+  background: #9c9ee8;
+}
+
 .hint {
   margin-top: 18px;
   font-size: 12px;
@@ -219,6 +290,20 @@ body {
 
 button {
   font-family: inherit;
+}
+
+/* Keyboard and gamepad focus: a clear ring on the current button. Keys and
+   pads put #ui in .nav-keys; a mouse or finger takes it out again. */
+#ui button:focus-visible,
+#ui.nav-keys button:focus {
+  outline: 3px solid #ffe9a8;
+  outline-offset: 2px;
+}
+
+/* Scrolling a focused row into view clears the menu's pinned footer. */
+.screen-menu .car-row,
+.screen-menu .track-row {
+  scroll-margin: 12px 0 120px;
 }
 
 .primary {
@@ -306,6 +391,7 @@ button {
 }
 
 .bar {
+  position: relative;
   flex: 1;
   height: 10px;
   background: #1d2a24;
@@ -318,6 +404,17 @@ button {
   height: 100%;
   background: linear-gradient(90deg, #2b6a4f, #7dff9b);
   transition: width 0.2s;
+}
+
+/* What an upgrade would add, lit while it's hovered or focused (the rule
+   that shows each one is generated with the garage, per slot). */
+.bar-gain {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #ffe9a8;
+  opacity: 0;
+  transition: opacity 0.12s;
 }
 
 .stat-val {
@@ -405,6 +502,16 @@ button {
 .slot-next {
   font-size: 11px;
   color: #8a9e92;
+}
+
+.slot-gains {
+  font-size: 11px;
+  color: #9fb4a8;
+}
+
+.slot-gains b {
+  color: #ffe9a8;
+  font-weight: 600;
 }
 
 .slot-cost {
@@ -529,9 +636,14 @@ button {
 
 .results-actions {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 10px 12px;
   justify-content: center;
   margin-top: 20px;
+}
+
+.results-actions button {
+  margin-top: 0;
 }
 
 /* RACE overlay ----------------------------------------------------------- */
@@ -564,11 +676,13 @@ button {
   background: rgba(8, 14, 11, 0.7);
 }
 
+/* Just above the race controls, so it can't run into them or the
+   speedometer on a narrower window, and gone once the race is under way. */
 .race-hint {
   position: fixed;
-  bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 58px;
+  left: 14px;
+  margin: 0;
   background: rgba(8, 14, 11, 0.55);
   border: 1px solid #2a3830;
   border-radius: 10px;
@@ -576,7 +690,128 @@ button {
   color: #cfe0d6;
   font-size: 13px;
   white-space: nowrap;
+  pointer-events: none;
+  animation: hint-out 0.8s ease 10s forwards;
+}
+
+@keyframes hint-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* RECORDS ---------------------------------------------------------------- */
+/* A board per open track: its outline and name, then your best laps. */
+.boards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.board-card {
+  background: #14201a;
+  border: 1px solid #263a30;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.board-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.board-name {
+  flex: 1;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.board-head .share {
+  padding: 5px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.board {
+  margin: 8px 0 0;
+  padding-left: 22px;
+  font-size: 13px;
+  color: #6f8578;
+}
+
+.board li {
+  margin: 3px 0;
+}
+
+.board b {
+  color: #fff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-right: 8px;
+}
+
+.board span {
+  color: #9fb4a8;
+}
+
+.board i {
+  float: right;
+  font-style: normal;
+}
+
+.board-card .empty {
+  margin-top: 8px;
+}
+
+/* The share line, when it had to be copied by hand: selectable, unlike the
+   rest of the UI. */
+.share-text {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #9fb4a8;
+}
+
+.share-text span {
+  color: #fff;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.result-board {
+  font-size: 14px;
+  color: #cfe0d6;
+  margin: 6px 0;
+}
+
+/* REPLAY ----------------------------------------------------------------- */
+/* Controls float over the replayed race; the canvas draws its badge. */
+.screen-replay {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  margin: 0;
+  pointer-events: none;
+}
+
+.replay-controls {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
   pointer-events: auto;
+}
+
+.replay-controls button {
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.replay-controls .ghost {
+  background: rgba(8, 14, 11, 0.75);
 }
 
 /* PAUSE ------------------------------------------------------------------ */
@@ -825,12 +1060,6 @@ button {
   .garage-body {
     flex-direction: column;
     gap: 12px;
-  }
-
-  .car-row,
-  .track-row {
-    width: 100%;
-    box-sizing: border-box;
   }
 
   .car-blurb {

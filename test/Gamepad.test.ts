@@ -2,9 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   deadzone,
   padInput,
+  padMenuState,
   GamepadInput,
+  NAV_REPEAT_DELAY_MS,
+  NAV_REPEAT_EVERY_MS,
+  PadRepeater,
   STICK_DEADZONE,
   type PadLike,
+  type PadMenuState,
 } from "../src/core/Gamepad.ts";
 
 /** A standard-mapping pad at rest, with overrides by button index. */
@@ -90,5 +95,60 @@ describe("GamepadInput — polling the browser's pads", () => {
     expect(g.startPressed()).toBe(false);
     held = true;
     expect(g.startPressed()).toBe(true);
+  });
+});
+
+describe("Gamepad — the menus", () => {
+  it("reads the d-pad, or a stick pushed past halfway, as a direction", () => {
+    expect(padMenuState(pad()).dir).toBeNull();
+    expect(padMenuState(pad([0, 0], { 13: 1 })).dir).toBe("down");
+    expect(padMenuState(pad([0, 0], { 14: 1 })).dir).toBe("left");
+    expect(padMenuState(pad([0.3, -0.2])).dir).toBeNull(); // a nudge
+    expect(padMenuState(pad([0.2, -0.9])).dir).toBe("up");
+    expect(padMenuState(pad([0.8, 0.6])).dir).toBe("right"); // its main axis
+    const held = padMenuState(pad([0, 0], { 0: 1, 1: 1, 9: 1 }));
+    expect([held.a, held.b, held.start]).toEqual([true, true, true]);
+    expect(padMenuState(pad([0, 0], { 0: 1 }, false)).a).toBe(false);
+  });
+
+  const state = (s: Partial<PadMenuState> = {}): PadMenuState => ({
+    dir: null,
+    a: false,
+    b: false,
+    start: false,
+    ...s,
+  });
+
+  it("presses a button once per push", () => {
+    const r = new PadRepeater();
+    expect(r.update(state({ a: true }), 0).a).toBe(true);
+    expect(r.update(state({ a: true }), 16).a).toBe(false); // held
+    expect(r.update(state(), 32).a).toBe(false);
+    expect(r.update(state({ a: true }), 48).a).toBe(true);
+  });
+
+  it("repeats a held direction after a pause, then steadily", () => {
+    const r = new PadRepeater();
+    const down = state({ dir: "down" });
+    const presses: number[] = [];
+    for (let t = 0; t <= 1000; t += 10)
+      if (r.update(down, t).dir === "down") presses.push(t);
+    expect(presses[0]).toBe(0);
+    expect(presses[1]).toBe(NAV_REPEAT_DELAY_MS);
+    expect(presses[2] - presses[1]).toBe(NAV_REPEAT_EVERY_MS);
+    // A new direction presses at once.
+    expect(r.update(state({ dir: "left" }), 1010).dir).toBe("left");
+  });
+
+  it("ignores what's held when a screen opens until it's let go", () => {
+    const r = new PadRepeater();
+    r.update(state({ a: true, dir: "up" }), 0); // driving: A is the handbrake
+    r.latch(); // the results open
+    for (let t = 16; t < 2000; t += 16) {
+      const p = r.update(state({ a: true, dir: "up" }), t);
+      expect(p.a || p.dir !== null).toBe(false);
+    }
+    r.update(state(), 2000); // let go…
+    expect(r.update(state({ a: true }), 2016).a).toBe(true); // …then a real press
   });
 });

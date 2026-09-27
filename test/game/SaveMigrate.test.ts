@@ -1,16 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { migrate, newSave } from "../../src/game/save.ts";
+import {
+  migrate,
+  newSave,
+  RECORDS_KEPT,
+  SAVE_VERSION,
+} from "../../src/game/save.ts";
 import { defaultSettings } from "../../src/game/settings.ts";
 import { maxTierFor } from "../../src/game/upgrades.ts";
 import { MAX_GHOST_POINTS } from "../../src/race/Ghost.ts";
 
 /**
- * Save-migration is exercised here because bestGhosts (v2) and `settings` (v3)
- * are new fields. migrate() must: (a) tolerate a legacy save missing those
+ * Save-migration is exercised here because bestGhosts (v2), `settings` (v3)
+ * and `records` (v4) are new fields. migrate() must: (a) tolerate a legacy save missing those
  * fields, (b) repair a corrupt ghost timeline / settings without throwing, and
  * (c) stamp every migrated payload schema-current.
  */
-describe("Save migration — schema bump (v1 -> v3)", () => {
+describe("Save migration — schema bumps (v1 -> current)", () => {
   it("fills a missing bestGhosts from a v1 save with an empty map", () => {
     const v1 = {
       version: 1,
@@ -23,7 +28,7 @@ describe("Save migration — schema bump (v1 -> v3)", () => {
       clearedTracks: [],
     };
     const out = migrate(v1);
-    expect(out.version).toBe(3);
+    expect(out.version).toBe(SAVE_VERSION);
     expect(out.bestGhosts).toEqual({}); // safe default, no crash
     expect(out.settings).toEqual(defaultSettings()); // prefs default, no crash
     expect(out.credits).toBe(42); // other fields survive
@@ -146,11 +151,99 @@ describe("Save migration — schema bump (v1 -> v3)", () => {
     expect(out.bestGhosts.overture?.length).toBe(MAX_GHOST_POINTS);
   });
 
-  it("null / non-object input migrates to a fresh save (v3)", () => {
-    expect(migrate(null).version).toBe(3);
-    expect(migrate("garbage").version).toBe(3);
-    expect(migrate({}).version).toBe(3);
+  it("null / non-object input migrates to a fresh save (current version)", () => {
+    expect(migrate(null).version).toBe(SAVE_VERSION);
+    expect(migrate("garbage").version).toBe(SAVE_VERSION);
+    expect(migrate({}).version).toBe(SAVE_VERSION);
     // A brand-new save is always schema-current.
-    expect(newSave().version).toBe(3);
+    expect(newSave().version).toBe(SAVE_VERSION);
+  });
+});
+
+describe("Save migration — the ladder can grow", () => {
+  it("keeps a cleared track selected even if a new track now precedes it", () => {
+    // Clover was cleared, but the track before it (Riverbend) never was —
+    // as when a track is slotted into the ladder ahead of one you've raced.
+    const out = migrate({ selectedTrack: "clover", clearedTracks: ["clover"] });
+    expect(out.selectedTrack).toBe("clover");
+  });
+});
+
+describe("Save migration — records boards (v4)", () => {
+  it("starts a pre-board save's boards from its track records", () => {
+    const out = migrate({ version: 3, bestLaps: { overture: 17000 } });
+    expect(out.records.overture).toEqual([{ ms: 17000, car: "", at: 0 }]);
+  });
+
+  it("repairs a board: drops junk, sorts fastest first, keeps the best few", () => {
+    const laps = Array.from({ length: 9 }, (_, i) => ({
+      ms: 20000 - i * 100,
+      car: "buggy",
+      at: 1_700_000_000_000,
+    }));
+    const out = migrate({
+      version: 4,
+      records: {
+        overture: [
+          ...laps,
+          { ms: -5, car: "buggy", at: 1 }, // not a lap
+          { ms: "fast" }, // not a number
+          null,
+          { ms: 19000, car: 7, at: "then" }, // repairable
+        ],
+      },
+    });
+    const board = out.records.overture;
+    expect(board).toHaveLength(RECORDS_KEPT);
+    for (let i = 1; i < board.length; i++)
+      expect(board[i].ms).toBeGreaterThanOrEqual(board[i - 1].ms);
+    // The repairable entry is the fastest lap; its car and date are unknown.
+    expect(board[0]).toEqual({ ms: 19000, car: "", at: 0 });
+    expect(board[1].ms).toBe(19200);
+    expect(board.every((r) => r.ms > 0 && typeof r.car === "string")).toBe(
+      true,
+    );
+  });
+
+  it("keeps the track record on its board even if the board lost it", () => {
+    const out = migrate({
+      version: 4,
+      bestLaps: { hairpin: 11000 },
+      records: { hairpin: [{ ms: 12000, car: "brawler", at: 5 }] },
+    });
+    expect(out.records.hairpin.map((r) => r.ms)).toEqual([11000, 12000]);
+  });
+});
+
+describe("Save migration — when the ladder or a track changes", () => {
+  it("a selected track that's closed now opens on the one to clear before it", () => {
+    // Clover followed Riverbend; now Gravel Pit sits between them, uncleared.
+    const out = migrate({
+      version: 3,
+      clearedTracks: ["overture", "hairpin", "riverbend"],
+      selectedTrack: "clover",
+    });
+    expect(out.selectedTrack).toBe("gravel-pit");
+  });
+
+  it("drops Dust Bowl records set before it became dirt, and keeps the rest", () => {
+    const ghost = [
+      { t: 0, x: 0, y: 0, heading: 0 },
+      { t: 100, x: 1, y: 0, heading: 0 },
+    ];
+    const old = migrate({
+      version: 3,
+      bestLaps: { "dust-bowl": 13600, overture: 17700 },
+      bestGhosts: { "dust-bowl": ghost, overture: ghost },
+      clearedTracks: ["overture", "dust-bowl"],
+    });
+    expect(old.bestLaps["dust-bowl"]).toBeUndefined();
+    expect(old.bestGhosts["dust-bowl"]).toBeUndefined();
+    expect(old.records["dust-bowl"]).toBeUndefined();
+    expect(old.clearedTracks).toContain("dust-bowl"); // still cleared
+    expect(old.bestLaps.overture).toBe(17700);
+
+    const now = migrate({ version: 4, bestLaps: { "dust-bowl": 14500 } });
+    expect(now.bestLaps["dust-bowl"]).toBe(14500); // set on dirt: it stands
   });
 });

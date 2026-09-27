@@ -5,6 +5,7 @@ import {
   type OwnedUpgrades,
 } from "./upgrades.ts";
 import { carClasses } from "./cars.ts";
+import { isUnlocked } from "./ladder.ts";
 import { tracks } from "../track/tracks.ts";
 import { capGhost, type Ghost, type GhostPoint } from "../race/Ghost.ts";
 import { defaultSettings, migrateSettings, type Settings } from "./settings.ts";
@@ -15,7 +16,26 @@ import { defaultSettings, migrateSettings, type Settings } from "./settings.ts";
  * (ISaveStore) so the pure logic (migrate/newSave/serialize) is testable away
  * from the browser, with a LocalStorage implementation for the real game.
  */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
+
+/** One of your best laps on a track: how long, in which car, and when. */
+export interface LapRecord {
+  ms: number;
+  /** Car class id ("" when an older save's record didn't say). */
+  car: string;
+  /** When it was set (epoch ms; 0 when not known). */
+  at: number;
+}
+
+/** How many of your best laps each track keeps. */
+export const RECORDS_KEPT = 5;
+
+/**
+ * Tracks whose road changed, and the save version that changed it: a record
+ * from an older save was set on a different surface (Dust Bowl was tarmac
+ * before v4), so it — and its ghost — no longer stands.
+ */
+const RESURFACED: Record<string, number> = { "dust-bowl": 4 };
 
 export interface SaveData {
   version: number;
@@ -27,6 +47,8 @@ export interface SaveData {
   /** Best lap ms per track id (the race's best single lap). */
   bestLaps: Record<string, number>;
   bestGhosts: Record<string, Ghost>;
+  /** Your best laps per track id, fastest first (the first is `bestLaps`). */
+  records: Record<string, LapRecord[]>;
   /** Selectable screen selections, for convenience. */
   selectedCar: string;
   selectedTrack: string;
@@ -51,6 +73,7 @@ export function newSave(): SaveData {
     upgrades: { [firstCar.id]: freshUpgrades() },
     bestLaps: {},
     bestGhosts: {},
+    records: {},
     selectedCar: firstCar.id,
     selectedTrack: tracks[0].id,
     clearedTracks: [],
@@ -107,6 +130,29 @@ export function migrate(input: unknown): SaveData {
     }
   }
 
+  const version = typeof raw.version === "number" ? raw.version : 0;
+  for (const [t, since] of Object.entries(RESURFACED))
+    if (version < since) {
+      delete data.bestLaps[t];
+      delete data.bestGhosts[t];
+    }
+
+  if (raw.records && typeof raw.records === "object") {
+    for (const [t, list] of Object.entries(
+      raw.records as Record<string, unknown>,
+    )) {
+      const clean = coerceRecords(list);
+      if (clean.length > 0) data.records[t] = clean;
+    }
+  }
+  // The track record is always on its board: a save from before the boards
+  // (v3 and older) starts each one from it, car and date unknown.
+  for (const [t, ms] of Object.entries(data.bestLaps)) {
+    const board = data.records[t] ?? [];
+    if (!board.some((r) => r.ms === ms))
+      data.records[t] = sortRecords([...board, { ms, car: "", at: 0 }]);
+  }
+
   if (raw.clearedTracks && Array.isArray(raw.clearedTracks)) {
     data.clearedTracks = raw.clearedTracks.filter(
       (t): t is string =>
@@ -122,12 +168,15 @@ export function migrate(input: unknown): SaveData {
       : data.ownedCars[0];
   data.upgrades[data.selectedCar] =
     data.upgrades[data.selectedCar] ?? freshUpgrades();
-  // Likewise only an unlocked track (the first, or one whose predecessor is
-  // cleared): the menu would never let you start a race on a locked one.
+  // Likewise only an open track: the menu would never let you start a race
+  // on a locked one. One that's closed now — a new track slotted in ahead of
+  // it — falls back to the nearest open track before it: the one to clear.
   const ti = tracks.findIndex((x) => x.id === raw.selectedTrack);
-  if (ti === 0 || (ti > 0 && data.clearedTracks.includes(tracks[ti - 1].id))) {
-    data.selectedTrack = tracks[ti].id;
-  }
+  for (let i = ti; i >= 0; i--)
+    if (isUnlocked(tracks, data.clearedTracks, i)) {
+      data.selectedTrack = tracks[i].id;
+      break;
+    }
   // UI prefs ride the same save; a legacy save that lacks them keeps defaults.
   if (raw.settings !== undefined) data.settings = migrateSettings(raw.settings);
   data.version = SAVE_VERSION;
@@ -162,6 +211,28 @@ function coerceGhost(raw: unknown): GhostPoint[] {
     last = t;
   }
   return capGhost(out.sort((a, b) => a.t - b.t));
+}
+
+/** Fastest first, and only as many as a board keeps. */
+export function sortRecords(list: LapRecord[]): LapRecord[] {
+  return [...list].sort((a, b) => a.ms - b.ms).slice(0, RECORDS_KEPT);
+}
+
+/** A board from arbitrary data: valid laps only, fastest first, capped. */
+function coerceRecords(raw: unknown): LapRecord[] {
+  if (!Array.isArray(raw)) return [];
+  const out: LapRecord[] = [];
+  for (const r of raw) {
+    if (r === null || typeof r !== "object") continue;
+    const { ms, car, at } = r as Record<string, unknown>;
+    if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) continue;
+    out.push({
+      ms,
+      car: typeof car === "string" ? car : "",
+      at: typeof at === "number" && Number.isFinite(at) && at > 0 ? at : 0,
+    });
+  }
+  return sortRecords(out);
 }
 
 /** Owned tier counts, as whole numbers within each slot's tier range. */

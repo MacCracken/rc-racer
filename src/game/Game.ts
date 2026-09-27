@@ -30,13 +30,22 @@ import { makeDriver } from "../race/AiDriver.ts";
 import { tracks as DEFAULT_TRACKS } from "../track/tracks.ts";
 import type { TrackDef } from "../track/Track.ts";
 import { buildTrack } from "../track/Track.ts";
-import { carById, carClasses as DEFAULT_CARS, type CarClass } from "./cars.ts";
+import { conditionsOf, conditionTags } from "../track/conditions.ts";
+import { outlineOf } from "../track/outline.ts";
+import {
+  carById,
+  carClasses as DEFAULT_CARS,
+  freshBase,
+  type CarClass,
+} from "./cars.ts";
 import { Progression } from "./progression.ts";
 import { rivalCarFor, rivalField, rivalLabel } from "./rivals.ts";
 import {
   UPGRADE_TREE,
+  applyBuild,
   nextTier,
   statBars,
+  statGains,
   type SlotId,
   type OwnedUpgrades,
 } from "./upgrades.ts";
@@ -52,6 +61,8 @@ import {
   type SkidState,
 } from "../core/SkidMarks.ts";
 import { sampleGhost, type Ghost } from "../race/Ghost.ts";
+import { ReplayRecorder, type CarPose } from "../race/Replay.ts";
+import { ReplayPlayer } from "../race/ReplayPlayer.ts";
 import { buildSplits, ghostTimeAt, type Splits } from "../race/Split.ts";
 import {
   CAR_LENGTH,
@@ -67,12 +78,16 @@ import {
 import {
   menuHtml,
   garageHtml,
+  recordsHtml,
   resultsHtml,
   raceOverlay,
   pauseHtml,
+  replayHtml,
   onboardingHtml,
   settingsHtml,
   formatPar,
+  THUMB_H,
+  THUMB_W,
   type Screen,
   type UiModel,
   type CarRow,
@@ -81,6 +96,9 @@ import {
   type ResultsView,
 } from "../ui/ui.ts";
 import type { Vec2 } from "../core/vec.ts";
+import { MenuNav } from "../ui/MenuNav.ts";
+import { backStep, MenuInput } from "../ui/MenuInput.ts";
+import { Records } from "./records.ts";
 import { ACTION_LABELS, keyLabel, type CarLook } from "../core/theme.ts";
 import {
   defaultSettings,
@@ -141,8 +159,12 @@ export class Game {
 
   private camera: Camera;
   private input: IInput;
-  /** Also inside `input`; held here to poll its Start button for pause. */
+  /** Also inside `input`; held here to poll its buttons (pause, menus). */
   private gamepad: GamepadInput;
+  /** Menus by d-pad, stick or keys: focus movement and restoring… */
+  private readonly nav: MenuNav;
+  /** …and what the keys and pad do there (`menus` drives `nav`). */
+  private readonly menus: MenuInput;
   /** Also inside `input`; held here to re-light buttons on a re-render. */
   private touch: TouchInput;
   private clockMs = 0;
@@ -172,6 +194,12 @@ export class Game {
   private paused = false;
   private lastResults: ResultsView | null = null;
   public screen: Screen = "menu";
+  /** Records the race in progress, for the results' replay… */
+  private recorder = new ReplayRecorder();
+  /** …and plays the last finished one back. */
+  private readonly replays = new ReplayPlayer();
+  /** The Records screen's state (what was just copied). */
+  private readonly records = new Records();
 
   private onClickBound: (e: Event) => void;
   private onKeyDownBound: (e: KeyboardEvent) => void;
@@ -261,6 +289,10 @@ export class Game {
     this.playerRace = new RaceState(this.arena.track, () => this.clockMs);
 
     this.uiRoot.addEventListener("click", this.onClickBound);
+    // The main menu comes back to the button you left it by; other screens
+    // open on their main action.
+    this.nav = new MenuNav(this.uiRoot, { keepPlace: ["menu"] });
+    this.menus = new MenuInput(this.nav);
   }
 
   // --- lifecycle ---------------------------------------------------------
@@ -273,6 +305,7 @@ export class Game {
     window.addEventListener("keydown", this.onKeyDownBound);
     window.addEventListener("blur", this.onFocusLostBound);
     document.addEventListener("visibilitychange", this.onVisibilityBound);
+    this.nav.attach();
     this.showOpeningScreen();
     this.lastFrameMs = performance.now();
     this.frameHandle = requestAnimationFrame((t) => this.frame(t));
@@ -286,13 +319,16 @@ export class Game {
     window.removeEventListener("blur", this.onFocusLostBound);
     document.removeEventListener("visibilitychange", this.onVisibilityBound);
     this.uiRoot.removeEventListener("click", this.onClickBound);
+    this.nav.detach();
     if (this.frameHandle !== null) cancelAnimationFrame(this.frameHandle);
     this.frameHandle = null;
   }
 
   /**
    * Global shortcuts. In a race R restarts and Esc / P pause (and resume);
-   * Q / Backspace — or Esc on any other screen — go back to the menu.
+   * Q / Backspace — or Esc on any other screen — go back to the menu. On a
+   * menu (the pause menu too) the arrows, or the driving keys, move between
+   * buttons and Enter / Space press the focused one.
    */
   private onKeyDown(e: KeyboardEvent): void {
     // Leave browser/OS chords (⌘R reload, Ctrl+Q…) to the browser.
@@ -306,8 +342,17 @@ export class Game {
       if (!e.repeat) this.togglePause();
       return;
     }
+    if (this.onMenus() && this.menus.key(e, this.settings.keyMap)) return;
+    // A fresh press only: a held Esc's auto-repeat would carry on from the
+    // replay through the results it just returned to.
     const quitting =
-      e.code === "Escape" || e.code === "Backspace" || e.code === "KeyQ";
+      !e.repeat &&
+      (e.code === "Escape" || e.code === "Backspace" || e.code === "KeyQ");
+    if (quitting && this.screen === "replay") {
+      this.audio.play("click");
+      this.exitReplay();
+      return;
+    }
     if (quitting && this.screen !== "menu") {
       // Leaving How to Play by key counts as seen, as a click does.
       if (this.screen === "onboarding") this.markOnboarded();
@@ -322,7 +367,7 @@ export class Game {
     if ((window.devicePixelRatio || 1) !== this.dpr) this.onResize();
     const delta = (nowMs - this.lastFrameMs) / 1000;
     this.lastFrameMs = nowMs;
-    this.pollGamepad();
+    this.pollGamepad(nowMs);
     this.loop.update(delta);
     this.fpsAcc += delta;
     this.fpsFrames++;
@@ -344,7 +389,11 @@ export class Game {
     this.viewScale = viewScaleFor(window.innerWidth, window.innerHeight);
     // A race re-frames itself every step; the menus' backdrop is set once,
     // so re-frame it now (e.g. a phone rotated on the menu).
-    if (this.screen !== "race" && this.screen !== "results")
+    if (
+      this.screen !== "race" &&
+      this.screen !== "results" &&
+      this.screen !== "replay"
+    )
       this.syncPreviewCamera();
   }
 
@@ -364,30 +413,51 @@ export class Game {
 
   private showMenu(): void {
     this.screen = "menu";
-    this.uiRoot.innerHTML = menuHtml(this.uiModel());
+    this.render(menuHtml(this.uiModel()));
     this.syncPreviewCamera();
   }
 
   private showGarage(): void {
     this.screen = "garage";
-    this.uiRoot.innerHTML = garageHtml(this.uiModel());
+    this.render(garageHtml(this.uiModel()));
+    this.syncPreviewCamera();
+  }
+
+  private showRecords(): void {
+    this.screen = "records";
+    this.render(recordsHtml(this.records.view(this.prog, this.trackDefs)));
     this.syncPreviewCamera();
   }
 
   private showResults(): void {
     if (this.lastResults === null) return;
     this.screen = "results";
-    this.uiRoot.innerHTML = resultsHtml(this.lastResults);
+    this.render(resultsHtml(this.lastResults));
   }
 
   private showOnboarding(): void {
     this.screen = "onboarding";
-    this.uiRoot.innerHTML = onboardingHtml(this.settings.keyMap);
+    this.render(onboardingHtml(this.settings.keyMap));
   }
 
   private showSettings(): void {
     this.screen = "settings";
-    this.uiRoot.innerHTML = settingsHtml(this.settingsView());
+    this.render(settingsHtml(this.settingsView()));
+  }
+
+  /** Is a screen of menus up (anything but a race in progress)? */
+  private onMenus(): boolean {
+    return this.screen !== "race" || this.paused;
+  }
+
+  /**
+   * Install a screen's HTML (`screen` already set), then let the menu input
+   * latch what's still held from a race and hand focus back to a key or pad
+   * player.
+   */
+  private render(html: string): void {
+    this.uiRoot.innerHTML = html;
+    this.menus.shown(this.screen, !this.onMenus(), this.gamepad);
   }
 
   private currentTrack = (): TrackDef =>
@@ -494,6 +564,8 @@ export class Game {
     this.skid = createSkid();
     this.lastInput = neutralInput();
     this.prevLap = 0;
+    this.recorder = new ReplayRecorder();
+    this.recorder.record(0, this.poses());
     // The field waits on the grid for the lights; the first beep is "3".
     this.countdownMs = this.countdownTotalMs;
     if (this.countdownMs > 0) this.audio.play("count");
@@ -505,10 +577,47 @@ export class Game {
     this.camera.zoom = CAMERA_ZOOM_SLOW * this.viewScale;
   }
 
-  /** A gamepad's Start button pauses and resumes a race, like Esc / P. */
-  private pollGamepad(): void {
-    if (this.gamepad.startPressed() && this.screen === "race")
+  /** The results' "Next: <track>": select the ladder's next track, race it. */
+  private raceNextTrack(): void {
+    const next = this.lastResults?.nextTrack;
+    if (next === undefined) return;
+    this.prog.selectTrack(next.id);
+    this.save();
+    this.startRace();
+  }
+
+  /**
+   * The pad, once a frame. Racing, Start pauses (and resumes). On any menu —
+   * the pause menu too — the d-pad or stick moves between buttons, A presses
+   * the focused one, B backs out, and Start presses the screen's main action.
+   */
+  private pollGamepad(nowMs = performance.now()): void {
+    const press = this.gamepad.poll(nowMs);
+    if (this.screen === "race" && press.start) {
       this.togglePause();
+      return;
+    }
+    if (this.onMenus() && this.menus.pad(press) === "back") this.padBack();
+  }
+
+  /** B on a menu: take the step back `backStep` names for this screen. */
+  private padBack(): void {
+    const step = backStep({
+      screen: this.screen,
+      paused: this.paused,
+      rebinding: this.rebinding !== null,
+    });
+    if (step === "exit-replay") this.exitReplay();
+    else if (step === "resume") this.togglePause();
+    else if (step === "cancel-rebind") {
+      this.rebinding = null;
+      this.rebindNotice = null;
+      this.showSettings();
+    } else if (step === "to-menu") {
+      if (this.screen === "onboarding") this.markOnboarded();
+      this.audio.play("click");
+      this.backToMenu();
+    }
   }
 
   /** Esc / P / a gamepad's Start: pause a race, or resume a paused one. */
@@ -537,9 +646,11 @@ export class Game {
 
   /** The race's DOM layer: the pause menu while paused, else the thin overlay. */
   private showRaceOverlay(): void {
-    this.uiRoot.innerHTML = this.paused
-      ? pauseHtml(this.settings.muted)
-      : raceOverlay(this.settings.keyMap, this.settings.muted);
+    this.render(
+      this.paused
+        ? pauseHtml(this.settings.muted)
+        : raceOverlay(this.settings.keyMap, this.settings.muted),
+    );
     // New buttons: light the ones a finger is still holding.
     this.touch.refresh();
   }
@@ -548,6 +659,12 @@ export class Game {
 
   /** Fixed-timestep tick; `dt` is in seconds. */
   private onStep(dt: number): void {
+    if (this.screen === "replay") {
+      // Reaching the flag swaps Pause for "Watch again".
+      if (this.replays.step(dt, this.arena.cars, this.skid)) this.showReplay();
+      this.followCamera(dt);
+      return;
+    }
     if (this.screen !== "race" || this.finished || this.paused) return;
     if (this.countdownMs > 0) {
       this.stepCountdown(dt);
@@ -586,6 +703,8 @@ export class Game {
       r.race.update(r.prev, r.car.body.position);
       r.prev = { x: r.car.body.position.x, y: r.car.body.position.y };
     }
+    if (this.recorder.due(this.clockMs))
+      this.recorder.record(this.clockMs, this.poses());
 
     // Camera follows the player (look-ahead along heading) so the track stays framed.
     this.followCamera(dt);
@@ -642,6 +761,8 @@ export class Game {
 
   private finalizeRace(): void {
     this.finished = true;
+    this.recorder.record(this.clockMs, this.poses()); // the flag itself
+    this.replays.load(this.recorder.finish());
     this.audio.play("finish");
     this.confettiStartFrameMs = this.lastFrameMs;
     const position = this.playerPosition();
@@ -654,9 +775,12 @@ export class Game {
       finished: true,
       position,
       fieldSize: this.arena.cars.length,
+      at: Date.now(),
     });
     // A new record replaces the ghost: show (and next time chase) that one.
     this.ghost = this.prog.ghostFor(this.currentTrack().id);
+    const i = this.trackDefs.findIndex((t) => t.id === this.currentTrack().id);
+    const next = this.trackDefs[i + 1];
     this.lastResults = {
       position,
       total: this.arena.cars.length,
@@ -667,9 +791,62 @@ export class Game {
         outcome.unlockedCar === null
           ? undefined
           : (carById(outcome.unlockedCar)?.name ?? outcome.unlockedCar),
+      nextTrack:
+        next !== undefined && this.prog.isTrackUnlocked(i + 1)
+          ? { id: next.id, name: next.name }
+          : undefined,
+      canReplay: this.replays.ready,
+      trackName: this.currentTrack().name,
     };
     this.save();
     this.showResults();
+  }
+
+  /** Every car's pose right now, player first, as the replay records it. */
+  private poses(): CarPose[] {
+    const inputs = [this.lastInput, ...this.racers.map((r) => r.input)];
+    return this.arena.cars.map((c, i) => ({
+      x: c.body.position.x,
+      y: c.body.position.y,
+      angle: c.body.angle,
+      steer: inputs[i]?.steer ?? 0,
+      braking: (inputs[i]?.brake ?? 0) > 0,
+    }));
+  }
+
+  // --- replay ----------------------------------------------------------
+
+  /** The results' "Replay": watch the race just run, from the green light. */
+  private watchReplay(): void {
+    if (!this.replays.ready) return;
+    this.screen = "replay";
+    this.skid = createSkid();
+    this.replays.watch(this.arena.cars, this.skid);
+    const p = this.arena.cars[0]!.body;
+    this.camera.view = { x: p.position.x, y: p.position.y };
+    this.showReplay();
+  }
+
+  private showReplay(): void {
+    this.render(replayHtml(this.replays.state()));
+  }
+
+  /** Back to the results, the field parked where the race finished. */
+  private exitReplay(): void {
+    this.replays.toEnd(this.arena.cars, this.skid);
+    this.screen = "results";
+    this.showResults();
+  }
+
+  /** Play / pause, or from the flag, watch again (with a fresh skid trail). */
+  private toggleReplay(): void {
+    if (this.replays.toggle()) this.skid = createSkid();
+    this.showReplay();
+  }
+
+  private cycleReplaySpeed(): void {
+    this.replays.cycleSpeed();
+    this.showReplay();
   }
 
   /**
@@ -699,6 +876,8 @@ export class Game {
 
   private renderScene(): void {
     const p = this.arena.cars[0]!;
+    // A replay draws the wheels and brake lights it recorded.
+    const replaying = this.screen === "replay";
     const scene: RenderScene = {
       camera: this.camera,
       track: this.arena.track,
@@ -706,6 +885,7 @@ export class Game {
       race: this.playerRace,
       speed: forwardSpeed(p.body),
       nowMs: this.clockMs,
+      timeMs: this.lastFrameMs,
       rivals: this.arena.cars.filter((c) => !c.isPlayer).map((c) => c.body),
       position: this.playerPosition(),
       total: this.arena.cars.length,
@@ -718,18 +898,20 @@ export class Game {
       fps: this.fps,
       look: this.carLook(),
       rivalLook: rivalCarFor(this.arena.track.def).look,
-      controls: {
-        steer: this.lastInput.steer,
-        braking: this.lastInput.brake > 0,
-      },
-      rivalControls: this.racers.map((r) => ({
-        steer: r.input.steer,
-        braking: r.input.brake > 0,
-      })),
+      controls: replaying
+        ? (this.replays.controls[0] ?? { steer: 0, braking: false })
+        : { steer: this.lastInput.steer, braking: this.lastInput.brake > 0 },
+      rivalControls: replaying
+        ? this.replays.controls.slice(1)
+        : this.racers.map((r) => ({
+            steer: r.input.steer,
+            braking: r.input.brake > 0,
+          })),
       // The race HUD belongs to a race (and its results); on the menus it
       // just peeks out around the panels.
       hud: this.screen === "race" || this.screen === "results",
       startClockMs: this.startClock(),
+      replay: replaying ? this.replays.badge() : undefined,
       ...this.chaseView(),
     };
     this.renderer.render(scene);
@@ -737,15 +919,18 @@ export class Game {
 
   /**
    * The continuous voices, once per frame: the player's engine while a race
-   * is live (on the grid too — rev it at the lights) and tyre squeal while
-   * sliding. Silent on the menus, while paused and after the finish.
+   * is live (on the grid too — rev it at the lights), tyre squeal while
+   * sliding, and rain on a wet track. Silent on the menus, while paused and
+   * after the finish.
    */
   private presentAudio(): void {
     if (this.screen !== "race" || this.paused || this.finished) {
       this.audio.setEngine?.(null);
       this.audio.setSkid?.(0);
+      this.audio.setRain?.(false);
       return;
     }
+    this.audio.setRain?.(conditionsOf(this.arena.track.def).weather === "rain");
     const p = this.arena.cars[0]!;
     const top = Math.max(1, p.stats.maxSpeed);
     this.audio.setEngine?.(
@@ -817,7 +1002,7 @@ export class Game {
     const target = e.target as HTMLElement | null;
     if (target === null) return;
     const el = target.closest(
-      "[data-action],[data-selectcar],[data-selecttrack],[data-buy],[data-switchcar],[data-bind]",
+      "[data-action],[data-selectcar],[data-selecttrack],[data-buy],[data-switchcar],[data-bind],[data-share]",
     ) as HTMLElement | null;
     if (el === null) return;
     this.audio.play("click");
@@ -828,9 +1013,19 @@ export class Game {
     if (this.screen === "onboarding") this.markOnboarded();
     if (action === "start" || action === "raceagain" || action === "restart")
       this.startRace();
+    else if (action === "nexttrack") this.raceNextTrack();
+    else if (action === "replay") this.watchReplay();
+    else if (action === "replay-toggle") this.toggleReplay();
+    else if (action === "replay-speed") this.cycleReplaySpeed();
+    else if (action === "replay-exit") this.exitReplay();
     else if (action === "garage") this.showGarage();
-    else if (action === "menu") this.showMenu();
-    else if (action === "quit") this.backToMenu();
+    else if (action === "records") {
+      this.records.reset();
+      this.showRecords();
+    }
+    // From the results (or a garage visited from them) the backdrop is the
+    // finished race: park a fresh preview car, as Esc does.
+    else if (action === "menu" || action === "quit") this.backToMenu();
     else if (action === "pause") this.pause();
     else if (action === "resume") this.resume();
     else if (action === "howto") this.showOnboarding();
@@ -882,6 +1077,16 @@ export class Game {
 
     const sw = el.getAttribute("data-switchcar");
     if (sw !== null) changed = this.prog.selectCar(sw) || changed;
+
+    const share = el.getAttribute("data-share");
+    if (share !== null)
+      this.records.share(
+        this.prog,
+        this.trackDefs,
+        share,
+        () => this.screen === "records",
+        () => this.showRecords(),
+      );
 
     const buySlot = el.getAttribute("data-buy");
     if (buySlot !== null)
@@ -941,23 +1146,39 @@ export class Game {
       vibe: t.vibe,
       difficulty: t.difficulty,
       rivals: rivalLabel(t),
+      lockHint:
+        i > 0 ? `Clear ${this.trackDefs[i - 1].name} to unlock` : undefined,
+      tags: conditionTags(conditionsOf(t)),
+      outline: outlineOf(t, THUMB_W, THUMB_H),
     }));
 
-    const carOwned: OwnedUpgrades = this.prog.upgradesFor(
-      this.prog.selectedCarId,
-    );
+    const carId = this.prog.selectedCarId;
+    const carOwned: OwnedUpgrades = this.prog.upgradesFor(carId);
+    const stats = this.currentStats();
     const upgrades: UpgradeRow[] = UPGRADE_TREE.map((s) => {
       const next = nextTier(s.id, carOwned);
+      const level = carOwned[s.id] ?? 0;
       return {
         slot: s.id,
         name: s.name,
-        level: carOwned[s.id] ?? 0,
+        level,
         maxLevel: s.tiers.length,
         nextCost: next?.cost ?? 0,
         maxed: next === null,
         canAfford: next !== null && credits >= next.cost,
         nextName: next?.name,
         nextDesc: next?.description,
+        // What the next tier would do to the bars, before it's bought.
+        gains:
+          next === null
+            ? []
+            : statGains(
+                stats,
+                applyBuild(freshBase(carId), {
+                  ...carOwned,
+                  [s.id]: level + 1,
+                }),
+              ),
       };
     });
 

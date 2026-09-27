@@ -23,12 +23,23 @@ import {
   type HudSize,
 } from "./theme.ts";
 import {
+  lampsFor,
+  NIGHT_AMBIENT,
   paintAsphaltTile,
+  paintDirtTile,
   paintGroundTile,
+  paintLamp,
+  paintLightMap,
   paintTrackArt,
+  roadColor,
   sceneryFor,
 } from "./trackArt.ts";
 import { paintCar, traceCarShadow } from "./carArt.ts";
+import {
+  conditionsOf,
+  conditionTags,
+  type Conditions,
+} from "../track/conditions.ts";
 
 /** World px of margin around the track art for scenery + shadows. */
 const ART_MARGIN = 220;
@@ -36,8 +47,20 @@ const ART_MARGIN = 220;
 const ART_MAX_PIXELS = 9_000_000;
 /** Ground texture tile size (world px). */
 const GROUND_TILE = 256;
+/** A night light map's resolution, relative to the art (light is soft). */
+const LIGHT_MAP_SCALE = 0.25;
+/** How far (world px) a headlight beam reaches, and its half-angle. */
+const BEAM_REACH = 150;
+const BEAM_SPREAD = 0.42;
 
+const TAU = Math.PI * 2;
 const IDLE: CarControls = { steer: 0, braking: false };
+
+/** A steady 0..1 random per (index, channel): a cheap hash, no state. */
+function hash01(i: number, k: number): number {
+  const v = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+}
 
 /** The static track, pre-painted at a fixed world->pixel scale. */
 interface TrackArt {
@@ -65,11 +88,12 @@ export class Canvas2DRenderer implements IRenderer {
   private colorMode: ColorMode = "std";
   private hudScale = 1;
   private art: TrackArt | null = null;
-  /** The ground texture tile, per background colour (art + screen share it). */
-  private groundTile: { color: string; tile: HTMLCanvasElement } | null = null;
-  private ground: { color: string; pattern: CanvasPattern } | null = null;
+  /** Ground texture tiles by background colour (+ night), shared by the art. */
+  private groundTiles = new Map<string, HTMLCanvasElement>();
+  private ground: { key: string; pattern: CanvasPattern } | null = null;
   /** The vignette, pre-shaded once per canvas size (see `drawVignette`). */
-  private vignette: HTMLCanvasElement | null = null;
+  private vignette: { canvas: HTMLCanvasElement; strength: number } | null =
+    null;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     // Opaque: every frame paints every pixel, so the browser needn't blend
@@ -114,18 +138,26 @@ export class Canvas2DRenderer implements IRenderer {
       rivalControls = [],
       ghostCar,
       startClockMs,
+      timeMs = 0,
     } = scene;
     const w = this.canvas.width / this.dpr;
     const h = this.canvas.height / this.dpr;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    const cond = conditionsOf(track.def);
+    const night = cond.lighting === "night";
+    const bodies = [car, ...(rivals ?? [])];
 
     const art = this.trackArt(track, camera);
     this.drawGround(track, camera, w, h, art);
     this.drawTrackArt(art, camera);
-    this.drawSkidMarks(skidMarks, camera);
+    this.drawSkidMarks(skidMarks, camera, cond);
     this.drawGhost(ghost, camera);
     if (ghostCar !== undefined) this.drawGhostCar(ghostCar, look, camera);
     if (hud) this.drawNextGate(track, camera, race);
+    // Light and water go down on the road, under the cars.
+    if (night)
+      this.drawHeadlights(bodies, [controls, ...rivalControls], camera);
+    if (cond.weather === "rain") this.drawSpray(bodies, camera);
     this.drawCars(
       car,
       rivals ?? [],
@@ -134,13 +166,16 @@ export class Canvas2DRenderer implements IRenderer {
       controls,
       rivalControls,
       camera,
+      night,
     );
-    this.drawVignette(w, h);
+    if (cond.weather === "rain") this.drawRain(w, h, timeMs);
+    this.drawVignette(w, h, night ? 0.62 : 0.4);
     if (hud) this.drawHUD(scene, w, h);
     if (confettiAgeMs !== undefined && confettiAgeMs >= 0) {
       this.drawConfetti(this.ctx, w, h, confettiAgeMs);
     }
     if (startClockMs !== undefined) this.drawStartLights(w, h, startClockMs);
+    if (scene.replay !== undefined) this.drawReplayBadge(w, scene.replay);
   }
 
   // --- world-space rendering ---
@@ -152,16 +187,30 @@ export class Canvas2DRenderer implements IRenderer {
     return c;
   }
 
-  /** The ground's texture tile for a background colour (cached). */
-  private groundTileFor(color: string): HTMLCanvasElement | null {
-    if (this.groundTile?.color !== color) {
-      const tile = this.makeCanvas(GROUND_TILE, GROUND_TILE);
+  /**
+   * The ground's texture tile for a background colour (cached). At night it
+   * is darkened by the same moonlight as the track art, so the two meet
+   * without a seam; the art itself is painted by day and darkened whole.
+   */
+  private groundTileFor(
+    color: string,
+    night: boolean,
+  ): HTMLCanvasElement | null {
+    const key = `${color}|${night}`;
+    let tile = this.groundTiles.get(key);
+    if (tile === undefined) {
+      tile = this.makeCanvas(GROUND_TILE, GROUND_TILE);
       const g = tile.getContext("2d");
       if (g === null) return null;
       paintGroundTile(g, GROUND_TILE, color);
-      this.groundTile = { color, tile };
+      if (night) {
+        g.globalCompositeOperation = "multiply";
+        g.fillStyle = NIGHT_AMBIENT;
+        g.fillRect(0, 0, GROUND_TILE, GROUND_TILE);
+      }
+      this.groundTiles.set(key, tile);
     }
-    return this.groundTile.tile;
+    return tile;
   }
 
   /**
@@ -180,10 +229,12 @@ export class Canvas2DRenderer implements IRenderer {
   ): void {
     const { ctx } = this;
     const color = track.def.background ?? "#0d1f14";
-    if (this.ground?.color !== color) {
-      const tile = this.groundTileFor(color);
+    const night = conditionsOf(track.def).lighting === "night";
+    const key = `${color}|${night}`;
+    if (this.ground?.key !== key) {
+      const tile = this.groundTileFor(color, night);
       const pattern = tile === null ? null : ctx.createPattern(tile, "repeat");
-      this.ground = pattern === null ? null : { color, pattern };
+      this.ground = pattern === null ? null : { key, pattern };
     }
     if (this.ground === null) {
       ctx.fillStyle = color;
@@ -281,22 +332,67 @@ export class Canvas2DRenderer implements IRenderer {
     );
     const g = canvas.getContext("2d", { alpha: false });
     if (g === null) return null;
+    const cond = conditionsOf(track.def);
     const tile = this.makeCanvas(96, 96);
     const tg = tile.getContext("2d");
-    const surface = track.def.surface ?? "#39404a";
-    if (tg !== null) paintAsphaltTile(tg, 96, surface);
-    const asphalt = (tg && g.createPattern(tile, "repeat")) ?? surface;
+    const surface = roadColor(track.def);
+    if (tg !== null)
+      (cond.terrain === "dirt" ? paintDirtTile : paintAsphaltTile)(
+        tg,
+        96,
+        surface,
+      );
+    const road = (tg && g.createPattern(tile, "repeat")) ?? surface;
     g.setTransform(scale, 0, 0, scale, -x * scale, -y * scale);
     // The ground first, anchored to the world like the live ground, so the
     // two meet seamlessly at the art's edge. Over-filled a little: the canvas
     // size was rounded up, and an unpainted opaque pixel is black.
     const color = track.def.background ?? "#0d1f14";
-    const groundTile = this.groundTileFor(color);
+    const groundTile = this.groundTileFor(color, false);
     g.fillStyle =
       (groundTile && g.createPattern(groundTile, "repeat")) ?? color;
     g.fillRect(x, y, worldW + 2, worldH + 2);
-    paintTrackArt(g, track, asphalt, sceneryFor(track));
+    paintTrackArt(g, track, road, sceneryFor(track));
+    if (cond.lighting === "night")
+      this.paintNight(g, track, { x, y, w: worldW + 2, h: worldH + 2 }, scale);
     return { id, canvas, x, y, scale };
+  }
+
+  /**
+   * Nightfall over freshly painted art: multiply it by a light map (moonlight,
+   * plus a warm pool under each trackside lamp) so lit ground keeps its own
+   * colour, then draw the lamps themselves at full brightness. The light map
+   * is low-res — it's all soft gradients — to keep the paint cheap.
+   */
+  private paintNight(
+    g: CanvasRenderingContext2D,
+    track: BuiltTrack,
+    rect: { x: number; y: number; w: number; h: number },
+    scale: number,
+  ): void {
+    const lamps = lampsFor(track);
+    const ls = scale * LIGHT_MAP_SCALE;
+    const light = this.makeCanvas(
+      Math.max(1, Math.ceil(rect.w * ls)),
+      Math.max(1, Math.ceil(rect.h * ls)),
+    );
+    const lg = light.getContext("2d");
+    if (lg === null) return;
+    lg.setTransform(ls, 0, 0, ls, -rect.x * ls, -rect.y * ls);
+    paintLightMap(lg, lamps);
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = "multiply";
+    // Scaled back up exactly, so each light texel lands where it was lit.
+    g.drawImage(
+      light,
+      0,
+      0,
+      light.width / LIGHT_MAP_SCALE,
+      light.height / LIGHT_MAP_SCALE,
+    );
+    g.restore();
+    for (const p of lamps) paintLamp(g, p);
   }
 
   /** Faded best-line overlay the player can chase; cosmetic only. */
@@ -347,38 +443,173 @@ export class Canvas2DRenderer implements IRenderer {
   }
 
   /**
-   * Draw the skid trail on the asphalt, under the cars. Each mark is a short
-   * dark segment oriented with the car's heading, fading with its alpha.
+   * Draw the skid trail on the road, under the cars. Each mark is a short
+   * segment oriented with the car's heading, fading with its alpha, with a
+   * puff over fresh ones: tyre smoke on tarmac, a cloud of dust on dirt, and
+   * spray (over fainter marks) on a wet road.
    */
-  private drawSkidMarks(marks: SkidMark[] | undefined, cam: Camera): void {
+  private drawSkidMarks(
+    marks: SkidMark[] | undefined,
+    cam: Camera,
+    cond: Conditions,
+  ): void {
     if (marks === undefined || marks.length === 0) return;
     const { ctx } = this;
+    const dirt = cond.terrain === "dirt";
+    const wet = cond.weather === "rain";
+    const mark = dirt ? "#2b1d0e" : "#0a0a0a";
+    const markAlpha = wet ? 0.2 : dirt ? 0.3 : 0.35;
+    const puff = dirt ? "#b99c70" : wet ? "#c9d9e8" : "#222";
+    const puffAlpha = dirt ? 0.2 : wet ? 0.14 : 0.12;
+    const puffSize = dirt ? 1.6 : 1;
     const len = CAR_LENGTH * 0.55 * cam.zoom;
     const width = Math.max(2, CAR_WIDTH * 0.32 * cam.zoom);
     ctx.save();
     ctx.lineWidth = width;
     ctx.lineCap = "round";
+    ctx.strokeStyle = mark;
+    ctx.fillStyle = puff;
     for (const m of marks) {
       const p = cam.toScreen({ x: m.x, y: m.y });
       const dx = Math.cos(m.angle) * (len / 2);
       const dy = Math.sin(m.angle) * (len / 2);
-      ctx.globalAlpha = m.alpha * 0.35;
-      ctx.strokeStyle = "#0a0a0a";
+      ctx.globalAlpha = m.alpha * markAlpha;
       ctx.beginPath();
       ctx.moveTo(p.x - dx, p.y - dy);
       ctx.lineTo(p.x + dx, p.y + dy);
       ctx.stroke();
 
-      // tire smoke puff
       if (m.alpha > 0.5) {
-        ctx.globalAlpha = m.alpha * 0.12;
-        ctx.fillStyle = "#222";
+        ctx.globalAlpha = m.alpha * puffAlpha;
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y, width * 2, width, 0, 0, Math.PI * 2);
+        ctx.ellipse(
+          p.x,
+          p.y,
+          width * 2 * puffSize,
+          width * puffSize,
+          0,
+          0,
+          TAU,
+        );
         ctx.fill();
       }
     }
     ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  /**
+   * Headlight beams ahead of every car on a night track, laid on the road
+   * (under the bodies) with additive light, and a red glow behind each car —
+   * brighter under braking.
+   */
+  private drawHeadlights(
+    bodies: Matter.Body[],
+    controls: CarControls[],
+    cam: Camera,
+  ): void {
+    const { ctx } = this;
+    const nose = CAR_LENGTH / 2 - 2;
+    const tail = -CAR_LENGTH / 2;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    bodies.forEach((b, i) => {
+      const p = cam.toScreen(b.position);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(b.angle);
+      ctx.scale(cam.zoom, cam.zoom);
+      const beam = ctx.createRadialGradient(nose, 0, 4, nose, 0, BEAM_REACH);
+      beam.addColorStop(0, "rgba(255,246,214,0.3)");
+      beam.addColorStop(0.5, "rgba(255,240,200,0.1)");
+      beam.addColorStop(1, "rgba(255,236,190,0)");
+      ctx.fillStyle = beam;
+      ctx.beginPath();
+      ctx.moveTo(nose, -CAR_WIDTH * 0.3);
+      ctx.arc(nose, 0, BEAM_REACH, -BEAM_SPREAD, BEAM_SPREAD);
+      ctx.lineTo(nose, CAR_WIDTH * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      const braking = controls[i]?.braking ?? false;
+      const glow = ctx.createRadialGradient(tail, 0, 0, tail, 0, 20);
+      glow.addColorStop(0, `rgba(255,40,20,${braking ? 0.55 : 0.25})`);
+      glow.addColorStop(1, "rgba(255,40,20,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(tail - 20, -20, 40, 40);
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+
+  /** Spray thrown up behind every car on a wet track, growing with speed. */
+  private drawSpray(bodies: Matter.Body[], cam: Camera): void {
+    const { ctx } = this;
+    ctx.save();
+    for (const b of bodies) {
+      const f = Math.min(1, Math.hypot(b.velocity.x, b.velocity.y) / 220);
+      if (f < 0.15) continue;
+      const p = cam.toScreen(b.position);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      // Spray trails the way the car is travelling, even mid-slide.
+      ctx.rotate(Math.atan2(b.velocity.y, b.velocity.x));
+      ctx.scale(cam.zoom, cam.zoom);
+      const len = 16 + 34 * f;
+      for (const side of [-1, 1]) {
+        const cx = -CAR_LENGTH / 2 - len / 2;
+        const cy = side * CAR_WIDTH * 0.32;
+        const mist = ctx.createRadialGradient(cx, cy, 0, cx, cy, len / 2);
+        mist.addColorStop(0, `rgba(215,228,240,${0.32 * f})`);
+        mist.addColorStop(1, "rgba(215,228,240,0)");
+        ctx.fillStyle = mist;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, len / 2, 4 + 5 * f, 0, 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Rain over the whole screen: streaks falling on their own steady loops,
+   * and short-lived splash rings that pop up somewhere new each cycle. `t` is
+   * wall-clock ms, so it keeps falling on the menus and while paused.
+   */
+  private drawRain(w: number, h: number, t: number): void {
+    const { ctx } = this;
+    const count = Math.round(Math.min(260, (w * h) / 7000));
+    ctx.save();
+    ctx.strokeStyle = "rgba(200,218,240,0.3)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < count; i++) {
+      const f = ((t / 700) * (0.7 + 0.5 * hash01(i, 3)) + hash01(i, 2)) % 1;
+      const x = hash01(i, 1) * (w + 60) - 30 + f * 40;
+      const y = f * (h + 60) - 30;
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 4, y - 14);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(200,218,240,0.35)";
+    for (let j = 0; j < count / 5; j++) {
+      const life = t / 450 + hash01(j, 7);
+      const cycle = Math.floor(life);
+      const age = life - cycle;
+      const k = j + cycle * 131;
+      ctx.globalAlpha = 1 - age;
+      ctx.beginPath();
+      ctx.ellipse(
+        hash01(k, 8) * w,
+        hash01(k, 9) * h,
+        1 + age * 5,
+        0.6 + age * 3,
+        0,
+        0,
+        TAU,
+      );
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -399,7 +630,10 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.restore();
   }
 
-  /** Shadows first (so no car's shadow lands on another), then bodies. */
+  /**
+   * Shadows first (so no car's shadow lands on another), then bodies. At
+   * night the paint is dimmed to sit in the dark; headlights mark each car.
+   */
   private drawCars(
     player: Matter.Body,
     rivals: Matter.Body[],
@@ -408,9 +642,17 @@ export class Canvas2DRenderer implements IRenderer {
     controls: CarControls,
     rivalControls: CarControls[],
     cam: Camera,
+    night: boolean,
   ): void {
     const { ctx } = this;
-    const pal = carPalette(this.colorMode);
+    const day = carPalette(this.colorMode);
+    const pal = night
+      ? {
+          player: shade(day.player, -0.3),
+          nose: shade(day.nose, -0.3),
+          rival: shade(day.rival, -0.35),
+        }
+      : day;
     const all: [Matter.Body, CarLook][] = [
       ...rivals.map((b): [Matter.Body, CarLook] => [b, rivalLook]),
       [player, look],
@@ -468,15 +710,20 @@ export class Canvas2DRenderer implements IRenderer {
    * software-rasterized canvas; it's shaded once per canvas size into an
    * offscreen canvas at device resolution and blitted 1:1.
    */
-  private drawVignette(w: number, h: number): void {
+  private drawVignette(w: number, h: number, strength: number): void {
     const { width, height } = this.canvas;
     // A 0-px canvas (a hidden or minimised embed) has nothing to darken, and
     // drawImage throws on a 0-px source, which would stop the frame loop.
     if (width === 0 || height === 0) return;
     let v = this.vignette;
-    if (v === null || v.width !== width || v.height !== height) {
-      v = this.makeCanvas(width, height);
-      const g = v.getContext("2d");
+    if (
+      v === null ||
+      v.canvas.width !== width ||
+      v.canvas.height !== height ||
+      v.strength !== strength
+    ) {
+      const canvas = this.makeCanvas(width, height);
+      const g = canvas.getContext("2d");
       if (g === null) return;
       const fill = g.createRadialGradient(
         width / 2,
@@ -487,12 +734,13 @@ export class Canvas2DRenderer implements IRenderer {
         Math.hypot(width, height) * 0.62,
       );
       fill.addColorStop(0, "rgba(0,0,0,0)");
-      fill.addColorStop(1, "rgba(0,0,0,0.4)");
+      fill.addColorStop(1, `rgba(0,0,0,${strength})`);
       g.fillStyle = fill;
       g.fillRect(0, 0, width, height);
+      v = { canvas, strength };
       this.vignette = v;
     }
-    this.ctx.drawImage(v, 0, 0, w, h);
+    this.ctx.drawImage(v.canvas, 0, 0, w, h);
   }
 
   // --- screen-space HUD ---
@@ -551,7 +799,8 @@ export class Canvas2DRenderer implements IRenderer {
       ctx.fillText(text, x, row1);
       x += ctx.measureText(widest).width + 24 * s;
     }
-    ctx.fillText(track.def.name, pad, row2);
+    const tags = conditionTags(conditionsOf(track.def));
+    ctx.fillText([track.def.name, ...tags].join(" · "), pad, row2);
     // Live split vs the ghost, under the lap timer it qualifies.
     if (scene.splitMs !== undefined) {
       const c = splitColors(this.colorMode);
@@ -655,7 +904,10 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.strokeStyle = "rgba(0,0,0,0.6)";
     ctx.lineWidth = road + 2;
     ctx.stroke();
-    ctx.strokeStyle = "rgba(170,182,192,0.75)";
+    ctx.strokeStyle =
+      conditionsOf(track.def).terrain === "dirt"
+        ? "rgba(196,166,122,0.75)"
+        : "rgba(170,182,192,0.75)";
     ctx.lineWidth = road;
     ctx.stroke();
     ctx.restore();
@@ -763,6 +1015,43 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.strokeText(text, cx, ty);
     ctx.fillStyle = go ? "#7dff9b" : "#ffe9a8";
     ctx.fillText(text, cx, ty);
+    ctx.restore();
+  }
+
+  /**
+   * A replay's badge, top-centre: a blinking red dot, REPLAY, how far in of
+   * how long, and the speed when it isn't 1×.
+   */
+  private drawReplayBadge(
+    w: number,
+    r: { ms: number; totalMs: number; speed: number },
+  ): void {
+    const { ctx } = this;
+    const s = this.hudScale;
+    const text = `REPLAY  ${formatLap(r.ms)} / ${formatLap(r.totalMs)}${r.speed !== 1 ? `  ${r.speed}×` : ""}`;
+    ctx.save();
+    ctx.font = `bold ${15 * s}px system-ui, sans-serif`;
+    const tw = ctx.measureText(text).width;
+    const bw = tw + 44 * s;
+    const bh = 32 * s;
+    const x = w / 2 - bw / 2;
+    const y = 12 * s;
+    ctx.fillStyle = "rgba(8,14,11,0.78)";
+    ctx.beginPath();
+    if (typeof ctx.roundRect === "function")
+      ctx.roundRect(x, y, bw, bh, bh / 2);
+    else ctx.rect(x, y, bw, bh);
+    ctx.fill();
+    // The dot blinks with the replay clock, so it stops when held.
+    if (Math.floor(r.ms / 500) % 2 === 0 || r.ms >= r.totalMs) {
+      ctx.fillStyle = "#ff3b30";
+      ctx.beginPath();
+      ctx.arc(x + 18 * s, y + bh / 2, 5 * s, 0, TAU);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#fff";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + 32 * s, y + bh / 2 + 1);
     ctx.restore();
   }
 

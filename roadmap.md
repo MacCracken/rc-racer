@@ -1,429 +1,109 @@
 # Roadmap — RC Racer
 
-**Goal:** Ship a browser-based, top-down arcade RC car racing demo whose selling
-point is _feel + progression_ (earn credits → upgrade/swap cars → harder
-tracks). Phases are ordered so that **each phase leaves a playable, demoable
-state**, and the project is "good enough to show" by the end of **Phase 4**.
+**Goal:** a browser-based, top-down arcade RC racer whose selling point is
+_feel + progression_: race → earn credits → upgrade or swap cars → take on
+harder tracks. Every phase leaves the game playable.
 
-> Note: web research was unavailable while writing this (local search tool
-> auth'd out), so the stack below is chosen from prior knowledge of browser
-> game tooling, not from a live survey. Each non-obvious choice is annotated
-> with the alternatives it beat and why.
+This file tracks **open work only**. What has shipped is in
+[CHANGELOG.md](./CHANGELOG.md); when an item here lands, it moves there.
 
----
-
-## Stack (locked)
-
-| Concern                       | Choice                                                                                            | Rationale / alternatives considered                                                                                                                                                                                                                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Language                      | **TypeScript** (strict, `noImplicitAny`)                                                          | Data-driven game = lots of structured objects; types catch wiring bugs. Alt: JS+JSDoc (rejected: weak at scale).                                                                                                                                                                                             |
-| Build/dev                     | **Vite**                                                                                          | Instant HMR, tiny config, first-class TS, production bundling. Alt: webpack (heavier), esbuild-only (no dev server).                                                                                                                                                                                         |
-| Rendering                     | **Canvas 2D** for v1, with a **renderer interface** we later swap to **PixiJS/WebGL**             | Top-down racing is 2D and light enough for Canvas2D to 60fps with a few cars + track. Renderer interface avoids a rewrite. Alt: PixiJS-on-day-1 (richer but adds dependency + complexity too early).                                                                                                         |
-| Physics                       | **Matter.js** (rigid-body + constraints)                                                          | The proven pattern for top-down _car_ physics: one body, engine torque, per-axle steering/wheel constraints → realistic traction, drift, under/oversteer. A kinematic "rotate-the-sprite" arcade model (alt) cannot produce the drifting feel that sells this genre. Matter is mature, well-documented, MIT. |
-| Game loop                     | Fixed-timestep accumulator decoupled from `requestAnimationFrame`                                 | Deterministic physics step regardless of framerate. Standard best practice.                                                                                                                                                                                                                                  |
-| Input                         | Keyboard (WASD/arrows) + pointer; **input abstraction layer** now so touch/gamepad drop in later  | Keeps the loop input-agnostic.                                                                                                                                                                                                                                                                               |
-| Save                          | **localStorage** (single JSON blob, versioned)                                                    | No backend. v1 only. Alt: IndexedDB for large data later.                                                                                                                                                                                                                                                    |
-| Data (cars, tracks, upgrades) | **External JSON/TS data files** with typed schemas                                                | Contenteditable without touching logic — key to scaling tracks/upgrades.                                                                                                                                                                                                                                     |
-| UI/HUD/menus                  | Plain DOM + TS in v1, behind a view layer; graduate to **Svelte** or **Solid** later              | Don't pay a framework's learning/tax cost before we know what the views need.                                                                                                                                                                                                                                |
-| Tests                         | **Vitest** (unit: physics tuning, math, data integrity); lightweight golden-frame/loop smoke test | Physics + upgrade math are where bugs hide; cheap to test, high value.                                                                                                                                                                                                                                       |
-| Lint/format                   | ESLint + Prettier                                                                                 | Standard.                                                                                                                                                                                                                                                                                                    |
-| CI                            | GitHub Actions: lint + typecheck + test on PR                                                     | Optional, Phase 3.                                                                                                                                                                                                                                                                                           |
-
-**Explicitly deferred (not v1):** real multiplayer/netcode, 3D, isometric
-camera, full mobile, leaderboards backend, in-app content packs. See Phase 6+.
+**Where we are:** Phases 0–3 (scaffolding, the drivable vertical slice, the
+progression loop, content and polish) are done. Phase 4 (tune and release) is
+done except the checks that need a person. Phase 5 is under way.
 
 ---
 
-## Guiding principles
+## 0.1.0 — the public demo
 
-1. **Playable at every phase end.** Every phase's exit criteria = something a
-   person can run in a browser and _do something with_.
-2. **Data over code for content.** Cars, tracks, upgrades are data so adding
-   "level 10" doesn't mean writing logic.
-3. **Feel is a tunable knob, not magic.** Car stats → a single "Vehicle
-   Model" that maps stats to physics forces. Tuning = editing a numbers table,
-   not rewriting physics.
-4. **Thin seams.** Renderer, Input, and Save are interfaces so we can swap
-   implementations (Canvas→Pixi, localStorage→IndexedDB) without touching the
-   simulation.
+What's left before tagging 0.1.0. Everything a machine can check is done; each
+of these needs a person, a real device, or a decision.
 
----
+- [ ] **Feel-tuning pass.** Drive every car on every track; fix the corner that
+      feels wrong, the upgrade that feels like nothing, the track that feels
+      unfair — and whether dirt, rain and night each feel right. Knobs:
+      `core/tuning.ts`, each car's stats in `game/cars.ts`, each track's
+      `aiPace` / `parLapMs` / `rivals` in `track/tracks.ts`, and the condition
+      multipliers in `track/conditions.ts`. `npm run verify:tracks` runs the
+      autopilot everywhere.
+- [ ] **60fps on a real low-end laptop.** Headless software-raster numbers are
+      only a proxy (1080p holds 60, a 2× laptop panel ~35).
+- [ ] **A listen to the sound mix** — engine, squeal, chimes — and levels
+      adjusted in `core/Audio.ts`.
+- [ ] **Hosting.** Pick a static host and publish `dist/` (see
+      [DEPLOY.md](./DEPLOY.md)); link it from the README.
+- [ ] **The 60-second first-run video** (shot list in DEPLOY.md), linked from
+      the README.
+- [ ] **Cut the release:** `version` in `package.json` → `0.1.0`, date the
+      changelog section, tag `v0.1.0`.
 
-## Phase 0 — Scaffolding & loop _(~0.5 day)_ ✅ DONE
-
-Set up the machine so that future phases are pure feature work.
-
-- `npm init`, install Vite + TypeScript + Vitest + ESLint + Prettier.
-- Vite app with an `index.html` + `src/`.
-- Minimal **fixed-timestep game loop** that logs frames and runs a rAF render
-  tick, drawing a moving box on a canvas.
-- `IInput`, `IRenderer` interfaces + a Canvas2D implementation + keyboard input.
-- Repo hygiene: `.gitignore`, git init, first commit. CI stub (lint+typecheck).
-
-**Exit criteria:** A box moves on screen driven by the keyboard; dev server
-hott reloads; `npm run test/build/lint` all pass. ✅ Achieved: typecheck clean,
-lint clean, 9 passing tests, prod build OK, dev server serves the app and
-transforms `main.ts`. Two real physics bugs were caught by the tests and fixed:
-brake could overshoot into reverse, and a parked car could spin.
-
-**Deliverable demo:** "the engine ticks and I can move a thing."
+**Exit criteria:** a stable 60fps, a public URL, and the first-run video.
 
 ---
 
-## Phase 1 — Vertical slice: one car, one track _(~1–2 days)_ ✅ DONE
+## Phase 5 — Stretch
 
-The single most important phase. Proves feel + camera + loop end-to-end.
+Additive, never blocking the demo. Roughly in priority order:
 
-- **Matter.js** integration: world, ground, the car body.
-- **Vehicle Model v1:** front-wheel steering + rear drive torque. Car
-  accelerates, brakes, steers. Add a simple **drift/handbrake** (rear lock or
-  reduced rear grip) so it can slide.
-- **Track** authored as data: a closed **spline/rail** with an inside/outside
-  boundary (walls or a "grass" slow zone), a start/finish line, and 1–2
-  lap-checkpoint gates.
-- **Track rendering:** asphalt ribbon, curbs, start/finish, grid.
-- **Cameras:** camera follow with a slight look-ahead; clamp to track.
-- **HUD:** speed, lap, current/lap/best time.
-- **Win condition:** cross start line N times → lap timer → "You finished,
-  lap X:Y.Z".
-- **VehicleModel is a pure function of a stat vector** (topSpeed, accel, grip,
-  braking, ...) so Phase 2 just feeds it different numbers.
-
-**Exit criteria:** On one track, accelerate/brake/steer/drift, complete 3 laps
-on a timer, with a readable camera and HUD. Feels "drivey."
-
-**Deliverable demo:** "**The game's soul** — a car you can actually drive."
-This alone is 40% of the sellable demo.
-
-**Risk:** car physics feel is the make-or-break. Mitigation: expose steering
-torque, engine force, drag coefficient, and grip as named constants/curve knobs
-and tune them _during_ this phase; commit a `tuning.ts` you keep editing.
-Accept "good enough" by feel, not by formula.
-
-**Status (Phase 1): ✅ DONE.** A single car on three data-authored tracks, with
-top-down Matter.js physics, a lap timer, curbs/asphalt rendering, a
-look-ahead camera, and a speed/lap/time HUD.
-
-- **`tuning.ts`** holds the car stat vector (`maxSpeed`, `accel`, `grip`,
-  `braking`, `turnRate`, `handbrakeGrip`, …) — a pure function of stats so
-  **Phase 2 just feeds it different numbers**. This is the seam the whole game
-  hangs off.
-- **`physics/MatterCar.ts`** — the car is a real Matter.js body. For a top-down
-  raceway ribbon we integrate the car ourselves (deterministic; avoids
-  Matter's `Engine.update` time-step footguns) and use an analytic
-  stay-in-the-band collision against the track annulus — correct by
-  construction and impossible to stall. Full SAT/wheel constraints are a
-  planned later-phase upgrade; `walls` are real (invisible) Matter bodies, so
-  the seam is there.
-- **`track/Track.ts`** turns an authored centerline into a closed outer/inner
-  ring, per-segment wall bodies, start/finish + checkpoint gates, and bounds.
-- **`track/tracks.ts`** — three hand-authored tracks: Overture (flowy), Hairpin
-  (technical), Dust Bowl (fast oval). Data-driven, no code per track.
-- **`race/RaceState.ts`** — sequential checkpoint gates (must cross 1,2,…,0)
-  to prevent skip-credits + lap counting + best/last/current timing. Pure and
-  fully unit-tested.
-- **Validation:** a competent-driver auto-controller (not in the build)
-  is completed **5 laps on Overture and 3 on Hairpin** headless, proving the
-  physics + lap loop compose into a finishable circuit. A human will do
-  better. Physics is validated by 17 unit tests + headless sims.
-
-**Known gaps for Phase 2 to fold in:** AI rival cars (the per-track
-autopilot is currently a throwaway validator, not game logic); reverse
-gear; a proper mass/weight feel. Feel tuning is ongoing (`tuning.ts`).
+- [ ] **More tracks**, including combined conditions (a wet night, dirt in
+      the rain): the physics and the renderer already compose them.
+- [ ] **Track editor / JSON import.** A read-only visualizer plus JSON import
+      beats a from-scratch authoring UI.
+- [ ] **Share a lap to race:** a code or URL that loads someone's best lap
+      as a ghost to chase (the Records screen shares a line of text today).
+- [ ] **Isometric camera tilt** (the camera and renderer seams allow it).
+- [ ] **Solid or Svelte for the menus**, once the set of views settles.
+- [ ] **Optional cosmetic packs** — never a paywall on skill.
+- [ ] **Open Graph preview image** (needs the final public URL).
 
 ---
 
-## Phase 2 — Progression loop: upgrades + credits _(~2–3 days)_
+## Phase 6 — Backed features (only if productizing)
 
-Turn "driving an arc" into "reasoning about a build."
-
-- **Stats model** finalized & centralized (see CONCEPT.md stat table): top
-  speed, accel, grip/handling, drift capacity, braking, weight, downforce.
-  Each maps to a concrete physics knob in the Vehicle Model.
-- **Upgrade system (data-driven):** car _slots_ (Engine, Tires, Suspension,
-  Brakes, Aero, Chassis/Weight, Drift Kit) × _tiers_ with {cost, statDelta,
-  prereq, description}.
-- **Economy:** earn **credits** on finishing a race (base + time performance
-  bonus, diminishing so "fast" is rewarded but not infinite).
-- **Save/load:** versioned localStorage snapshot — credits, owned cars/equipment,
-  best lap times.
-- **Upgrade UI:** menu to view a car's build, see each slot's tiers + costs,
-  buy/apply, and see stat bars change _live_.
-- **Car classes:** at least **Street Sedan** + **Buggy**, differing stats,
-  selectable at the grid.
-- **Tracks:** 3 tracks of escalating difficulty (radius/length/rival-speed).
-- **Time-trial vs AI:** spawn **AI cars** driven by a simple
-  race-line/speed-control autopilot (follow a racing line, throttle to corner
-  speed). Player competes for position; **best-lap** records per track.
-
-**Exit criteria:** You can earn credits, afford and install an upgrade that
-_visibly_ changes lap time, save it, reload, and progress through 3 tracks
-across 2 car classes with a meaningful "what do I fund first" decision.
-
-**Deliverable demo:** "The **loop** — I raced, got money, upgraded, and went
-faster." This is the "good enough demo" milestone (≈end of Phase 4 polish).
-
-**Risk:** tuning AI to be "fair and fun" is fiddly. Mitigation: AI autopilot
-as its own tunable module with per-track "pace" factor; ship it _imperfect but
-legible_ — an AI that sometimes takes the wrong line is fine for a demo.
-
-**Status (Phase 2): ✅ DONE (logic + headless proof; visual run pending a browser).**
-Everything Phase 2 promises about the _loop_ is built and green:
-
-- **Stats + upgrades centralized** and data-driven (`upgrades.ts`, `cars.ts`).
-  Seven families (Engine/Tires/Brakes/Suspension/Chassis/Aero/Drift) × tiers
-  map onto the existing CarStats knobs, so upgrades change _real physics_ with
-  no simulation change. `applyBuild`/`nextTier`/`totalInvested`/`statBars`
-  are pure + unit-tested.
-- **Economy** (`economy.ts`): `computeReward` = `base(8/lap) + bonus`
-  where bonus = `clamp(round((par/best)^1.6 − 1) × 180, 0, 320)` —
-  strictly monotonic in lap time (a faster lap always pays more), diminishing
-  so a perfect lap can't be farmed. Verified by tests (160 vs 151 vs 120 vs
-  78 vs 60). `parLapMs` lives on each `TrackDef`.
-- **Save/load** (`save.ts`): `ISaveStore` seam with `LocalSaveStore`
-  (production) + `MemorySaveStore` (tests). `SaveData` is versioned;
-  `migrate` defends against corruption/missing fields. `Progression.fromStore`
-  loads, `.snapshot()` saves.
-- **`Progression` orchestrator** (`progression.ts`): owns `SaveData`, exposes
-  `recordRace` (awards credits, sets best lap, marks track cleared,
-  detects car-class unlocks), `buyUpgrade`, `unlockCar`, `resolveStats`,
-  `isTrackUnlocked` (each track needs its predecessor cleared). Fully
-  unit-tested.
-- **AI autopilot** (`race/AiDriver.ts`): a _pure_ module (no Matter import) —
-  `aiInput(d, track, pace, out, lookahead?)` chases a look-ahead point on the
-  centerline, brakes by corner sharpness (thresholds scale with `pace`), and
-  edge-recovers to the centerline when too far out. `makeDriver(track, {pace})`
-  is the per-rival convenience. Each `TrackDef` carries an `aiPace`.
-- **Multi-car arena** (`MatterCar.createArena`): player + N rivals, rivals
-  varied slightly by index. **Cars never collide with each other** (shared
-  negative collision group) but still hit walls — a clean demo.
-- **`Game` director** (`game/Game.ts`): ties Progression + arena + renderer +
-  keyboard input + a `menu → garage → race → results` state machine. Renders
-  the player + rivals + live Pn HUD; on finish, records the outcome and shows
-  the results screen.
-- **UI** (`ui/ui.ts` + styled `#ui` overlay): data-driven HTML panels for
-  menu (pick car/track), garage (stat bars + buyable slots + car switcher),
-  and results (Pn, best lap, credits earned, new record, unlocks). No DOM in
-  the sim — UI is the only thing that touches the screen.
-- **Headless proof — "the upgrade made me faster"** (`ProgressionLoop.test.ts`):
-  a full matter-driven autopilot race on Hairpin. Proved: (a) the autopilot
-  finishes every track; (b) higher `pace` → faster lap; (c) a 3-tier Engine
-  build makes the finished race _materially faster_ (~8%+ off the base car's
-  best time). This is the heart of Phase 2 and it's a permanent, CI-safe test.
-
-**Caveat:** there is no browser in this environment, so the _visual_ run
-(the DOM panel look/feel) can't be confirmed here — only that everything
-bundles (`vite build` succeeds, 38 tests pass, lint/tsc clean). The loop
-itself is proven headless.
+Real-time multiplayer / netcode, accounts, cloud saves, real leaderboards,
+monetization. **Out of scope for the demo**, and re-scoped as its own project
+if RC Racer crosses from "cool demo" to "product".
 
 ---
 
-## Phase 3 — Content scale + polish _(~3–4 days)_
+## Risks
 
-Make it feel designed, not wired.
-
-- **Track editor (in-game or offline JSON tool):** so adding a track is
-  authoring data, not code. Even a read-only visualizer + JSON import beats a
-  from-scratch authoring UI.
-- **5th–8th tracks**, **3rd car class (1/8 brawler)** for heavy/power feel.
-- **Visual polish:** curved curbs, skid marks / tire smoke on drift, finish
-  confetti, better HUD (lap, position, ghost line from your best lap),
-  minimap.
-- **Audio:** engine pitch ~ RPM (procedural, from a sample or oscillator),
-  UI clicks, finish chime. Engine pitch is high-perceived-value for cheap cost.
-- **Onboarding:** a 30s how-to (controls + "earn → upgrade → go faster").
-- **Save migration** path tested (load old save after a schema change).
-- **CI** runs tests + build on PR; **Vitest** suites for upgrade math, lap
-  timer, save load/migrate, and a physics determinism smoke test.
-
-**Exit criteria:** A first-time user can load the demo, be onboarded, race a
-track, understand they should upgrade, upgrade, and feel progress — with juice
-(skid marks, engine sound, minimap) and no obvious bugs or dead ends.
-
-**Deliverable demo:** "The **product** — a small but complete, juicy arcade
-racer." Publicize-able.
-
-**Status (Phase 3): ✅ DONE — exit criteria met and browser-verified. The track editor moved to Phase 5.**
-
-_Shipped & headless-verified:_
-
-- **Content scale — data, not code.** `tracks.ts` now has **6 tracks**
-  (added Riverbend, Clover, Slalom) and `cars.ts` has a **3rd class, the
-  1/8 Brawler** (heavy, grippy, brutal braking). Every new thing is a data
-  entry; the sim/UI are unchanged.
-- **Content QA guard** (`test/game/Content.test.ts`): asserts the catalog is
-  non-trivial (≥5 tracks, ≥3 cars) — and, crucially, that **every track is
-  drivable end-to-end** (a stock sedan closes a lap on each one) — so a future
-  author can't ship an undrivable centerline. Also asserts each track's economy
-  - difficulty metadata is sane and the car classes are genuinely distinct.
-- **Difficulty + vibe metadata** surfaced in the menu (difficulty as ● dots per
-  track) and retuned `parLapMs` to realistic single-lap values so the economy
-  bonus actually fires on genuinely fast laps.
-- **Skid marks** (`core/SkidMarks.ts`, pure) — rear-wheel decals while drifting
-  (slip above a threshold), capped + age-fading, drawn on the asphalt under the
-  car via the renderer seam. Unit-tested (lays only on slip, caps, ages out).
-- **Audio seam** (`core/Audio.ts`) — a discrete `SoundEvent` model kept out of
-  the sim: `lap`/`finish`/`click` fire from `Game`. `WebAudio` plays a short
-  oscillator per event in a browser and degrades to a no-op headless; `NullAudio`
-  records events for tests. The _audible_ output is the one part that genuinely
-  needs a browser — only the event model is verified here.
-- **Ghost-line replay + a versioned save.** A pure `Ghost` module records a best
-  lap as (t, x, y, heading) samples and replays them through `sampleGhost`
-  (bilinear interp + clamp). `RaceState` now captures the best-lap timeline, and
-  a chaseable best-line overlay is wired through the `IRenderer` seam
-  (`drawGhost`). The save schema _bumped to v2_ with a `bestGhosts` field, so
-  `migrate()` now defends a v1 save — that retires the "save-migration path
-  tested" item (`SaveMigrate.test.ts` proves a v1 save loads, corrupt ghosts are
-  repaired, and a new record stores its ghost). `_Content.test.ts`_ also asserts
-  a full race yields a non-empty, time-ascending ghost.
-
-_Closed out with a browser in the loop:_
-
-- **Visuals confirmed in Chromium** (screenshots + the Playwright smoke suite
-  in CI): curbs, skid marks + tyre smoke, confetti, minimap, ghost line, the
-  HUD, all menus.
-- **Engine pitch ~ RPM, done:** a continuous WebAudio voice (sawtooth + a
-  detuned square through a throttle-opened low-pass) whose pitch follows road
-  speed, revving on the grid under throttle, with a per-class pitch (buggy
-  high, brawler deep) — plus a tyre squeal driven by the same slip test that
-  lays skid marks. The rev model is pure and tested; the audio graph was
-  checked in Chromium with an AnalyserNode (pitch/gain track the car, silent
-  when paused). Whether it _sounds_ right still wants a human ear.
-- **Onboarding:** How to Play opens by itself on first launch (a persisted
-  `onboarded` flag; saves with progress skip it) and covers podium/par/ghost.
-- **Moved to Phase 5:** the track editor / JSON import tool.
-- **Eyeball-found bug, fixed during a browser run:** the camera was set to the
-  start line _once_ and then frozen, so the car drove off a fixed window and
-  only half the track stayed on screen. `followCamera(dt)` now lerps the view
-  behind the player every step (with a small look-ahead along the velocity),
-  guarded by `test/Camera.test.ts` (convergence + a pinned "frozen camera
-  drifts away" regression).
+| Risk                                              | Impact | Mitigation                                                                                                                       |
+| ------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Car feel is wrong                                 | High   | Feel is numbers (`tuning.ts`, car stats), tuned by driving; "good enough by feel", not by formula. The feel-tuning pass is open. |
+| Low-end machines drop frames                      | Med    | Static art is pre-painted; per-frame fills are cut. Still needs a real-device check.                                             |
+| AI unfair or boring                               | Med    | Autopilot pace per track; the par test keeps every track's autopilot lap within [0.7×, 1.6×] of par. Ship legible, not perfect.  |
+| Scope creep on content                            | Med    | Content is data; Phase 5 is additive and never blocks the release.                                                               |
+| Renderer migration cost (Canvas2D → PixiJS/WebGL) | Low    | Renderer, input and save sit behind interfaces; a swap stays local to one module.                                                |
 
 ---
 
-## Phase 4 — Feel tuning pass & release demo _(~1–2 days)_
+## Decisions (reference)
 
-Not new features — extract, tune, stabilize.
+The stack, and why. These still hold; revisit only with a reason.
 
-- **Tuning review:** drive every car on every track; fix the one corner that
-  feels wrong, the one upgrade that's a no-op, the one track that's unfair.
-- **Perf:** hold 60fps on a low-end laptop; cap particles; ensure GC-friendly
-  object reuse.
-- **Input:** key remap + optional on-screen controls (pointer) if device-agnostic
-  demo matters.
-- **Accessibility/readability:** colorblind-aware HUD, readable at small sizes.
-- **Packaging:** production build, deploy to a static host (Vercel/Netlify/CNAME)
-  as the shareable demo URL.
+| Concern     | Choice                                                        | Why / alternatives                                                                                                                    |
+| ----------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Language    | TypeScript, strict                                            | A data-driven game is lots of structured objects; types catch wiring bugs. (JS + JSDoc: weak at scale.)                               |
+| Build / dev | Vite                                                          | Instant HMR, tiny config, first-class TS. (webpack: heavier; esbuild alone: no dev server.)                                           |
+| Rendering   | Canvas 2D behind an `IRenderer` seam; PixiJS/WebGL later      | Top-down 2D with a few cars holds 60fps in Canvas2D; the seam avoids a rewrite if we outgrow it.                                      |
+| Physics     | Own integration on a fixed step; Matter.js bodies as seam     | Deterministic and easy to tune; an analytic stay-in-the-band collision can't stall a car. Full SAT/wheel constraints remain possible. |
+| Game loop   | Fixed-timestep accumulator (120 Hz), decoupled from rAF       | The same physics at any frame rate.                                                                                                   |
+| Input       | `IInput` seam; keyboard, gamepad and touch merged             | The loop never knows the device.                                                                                                      |
+| Save        | `localStorage`, one versioned JSON blob + `migrate()`         | No backend. IndexedDB if saves outgrow it.                                                                                            |
+| Content     | Cars, tracks and upgrades as typed data                       | Adding "level 10" is authoring data, not writing logic.                                                                               |
+| UI          | Plain DOM + TS, rebuilt per screen                            | Don't pay a framework's cost before the views are known (see Phase 5).                                                                |
+| Tests       | Vitest (logic + headless sims), Playwright (the real build)   | Physics and upgrade math are where bugs hide; the browser suite catches what only a browser shows.                                    |
+| CI          | GitHub Actions on PRs: types, lint, format, tests, build, e2e | Checks only; deploys are a separate decision.                                                                                         |
 
-**Exit criteria:** Stable 60fps, a deployed URL, a 60-second "first-run" video.
-This is the **public demo**.
+**Guiding principles**
 
-**Status (Phase 4): 🚧 NEARLY THERE — everything a machine can do is done;
-what's left needs a person (or one repo setting).**
+1. **Playable at every step.** Each change leaves something a person can run
+   and _do something with_.
+2. **Data over code for content.** Cars, tracks and upgrades are data.
+3. **Feel is a tunable knob, not magic.** Stats map to forces; tuning is
+   editing a table.
+4. **Thin seams.** Renderer, input, audio and save are interfaces, so an
+   implementation can change without touching the simulation.
 
-_Done:_
-
-- **Perf.** Profiled in Chromium: the JS side of a frame is ~0.5 ms; the cost
-  is filling pixels, which bites when the canvas is rasterized in software.
-  The ground is now baked into the pre-painted track art, the vignette is
-  cached, and the canvas is opaque: 2–3× faster at high resolutions
-  (headless software raster, before → after: 1080p 28 → 60 fps, 2× laptop
-  12 → 35, 3× phone 21 → 60) with visually identical output. Skid marks are
-  pooled (no per-frame allocation).
-- **Input.** Key remap; **touch controls** (multi-touch, shown only on touch
-  screens) and **gamepad** (analog stick + triggers, Start pauses), all merged
-  through the `IInput` seam; a phone layout (stacked panels, a HUD that fits
-  narrow screens, a camera that pulls out on small viewports).
-- **Accessibility/readability.** Colorblind palette (incl. the ghost split's
-  colours), HUD size, mute; the menu's Start button pinned in view on short
-  screens.
-- **Packaging.** Relative-base build (works at any path), a GitHub Pages
-  deploy workflow on push to `main`, favicon + page metadata.
-- **Stability.** Playwright smoke tests in CI drive the real build: boot,
-  race, pause, results, garage, settings rebind, and touch on an emulated
-  phone; any page error fails them.
-- **Polish for a public demo:** a 3-2-1 start countdown (the field waits for
-  GO), pause with auto-pause on focus loss, a podium bonus with itemised
-  results ("Finish +84 · Pace +5 (par 18.0s) · P1 +40"), best laps on the
-  menu, and a ghost car with a live split (see Phase 5).
-
-_Left — needs a person:_
-
-- [ ] Enable GitHub Pages (Settings → Pages → Source: GitHub Actions), merge
-      to `main` → public URL.
-- [ ] Feel-tuning pass: drive every car on every track; fix the corner that
-      feels wrong (`tuning.ts`, per-track `aiPace` / `parLapMs`).
-- [ ] 60fps on a real low-end laptop (the headless numbers above are a proxy).
-- [ ] Listen to the engine + squeal mix; adjust levels in `core/Audio.ts`.
-- [ ] Record the 60-second first-run video (see DEPLOY.md).
-
----
-
-## Phase 5 — Stretch / post-v1 (only after demo is live)
-
-Track the vision, gated, none blocking the demo:
-
-- **Weather/track variants:** rain (lower grip), night, dirt vs. asphalt
-  surfaces, each with a different stat tradeoff.
-- **More tracks / content packs** and an **unlock map**.
-- ✅ **Ghost racing** vs. your own best time: a ghost car replays the lap to
-  beat (your record, or this race's best once it's faster) with a live split
-  under the timer, indexed by distance along the track. _Replay capture is
-  still open._
-- **Isometric camera tilt** (seam already exists in camera code).
-- ✅ **Mobile/touch** input via the input abstraction; responsive layout (plus
-  gamepad support).
-- **Track editor / JSON import** (moved from Phase 3): a read-only visualizer
-  - JSON import beats a from-scratch authoring UI.
-- **Solid/Svelte UI** for complex menus once the view set is known.
-- **Local leaderboards / shareable best-time codes** (IndexedDB + share URL).
-- **Optional cosmetic content packs** (never a paywall on skill).
-
----
-
-## Phase 6 — (only if productizing) Backed features
-
-- Real-time multiplayer / netcode, account system, cloud saves, real
-  leaderboards, monetization. **Explicitly out of scope for the demo** and
-  re-scoped as its own project when/if we cross from "cool demo" to "product."
-
----
-
-## Effort estimate
-
-| Phase              | Est.  | Cumulative | Demoable?          |
-| ------------------ | ----- | ---------- | ------------------ |
-| 0 Scaffolding      | 0.5 d | 0.5 d      | trivial            |
-| 1 Vertical slice   | 1.5 d | 2 d        | core feel ✅       |
-| 2 Progression loop | 2.5 d | 4.5 d      | DONE (headless) ✅ |
-| 3 Content + polish | 3.5 d | 8 d        | product ✅         |
-| 4 Tune + release   | 1.5 d | 9.5 d      | **public demo ✅** |
-| 5+ Stretch         | open  | —          | additive           |
-
-Realistic to a "good enough public demo" in **~1–1.5 weeks focused effort**.
-
----
-
-## Risks & how we de-risk
-
-| Risk                                                                    | Impact | Mitigation                                                                                                                                             |
-| ----------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Car feel is wrong**                                                   | High   | Tune as constants in Phase 1; `tuning.ts` you iterate on live; "good enough" by feel not formula; don't perfect it pre-Phase 2.                        |
-| **Matter.js top-down car is finicky** (tunneling through walls, jitter) | Med    | Use a continuous/dynamic-sensor approach; cap velocities; test the smoke test in Phase 3; keep body counts low.                                        |
-| **AI unfair/boring**                                                    | Med    | Autopilot with per-track pace; ship legible-not-perfect.                                                                                               |
-| **Scope creep on content**                                              | Med    | Data-driven content = cheap; cap v1 at 3 tracks / 2 cars; stretch moves to Phase 5.                                                                    |
-| **Renderer migration cost**                                             | Low    | Renderer + Input + Save are interfaces from Phase 0; swaps are localized.                                                                              |
-| **No web research available now**                                       | Low    | Stack is from prior knowledge; revisit the stack decision at Phase 0 start if a better engine is found, but the _interface_ decision holds regardless. |
-
----
-
-## Definition of done (for the demo / end of Phase 4)
-
-- [x] Drivable car with real traction/drift on a top-down track.
-- [x] 3 car classes, 6 tracks, working upgrade tree + credits + save.
-- [x] AI rivals + best-lap records.
-- [x] Skid marks, tyre smoke, engine voice + squeal, event sounds — browser-verified.
-- [x] Browser smoke tests in CI; deploy workflow ready.
-- [ ] Deployed at a public URL (needs Pages enabled + a merge to `main`).
-- [ ] 60fps confirmed on a low-end laptop.
-- [ ] 60-sec first-run video exists.
+**Explicitly deferred:** real multiplayer, 3D, full-size mobile app packaging,
+a leaderboard backend, in-app content packs (see Phases 5–6).

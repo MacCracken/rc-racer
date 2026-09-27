@@ -6,8 +6,16 @@ import {
   type OwnedUpgrades,
   type SlotId,
 } from "./upgrades.ts";
-import { newSave, migrate, type ISaveStore, type SaveData } from "./save.ts";
+import {
+  newSave,
+  migrate,
+  sortRecords,
+  type ISaveStore,
+  type LapRecord,
+  type SaveData,
+} from "./save.ts";
 import { carById, carClasses, freshBase } from "./cars.ts";
+import { isUnlocked, unlockedByClearing } from "./ladder.ts";
 import { tracks } from "../track/tracks.ts";
 import type { CarStats } from "../core/tuning.ts";
 import type { Ghost } from "../race/Ghost.ts";
@@ -23,6 +31,8 @@ export interface RaceResult {
   /** Finishing position (1 = won) and field size, for the podium bonus. */
   position?: number;
   fieldSize?: number;
+  /** When it was raced (epoch ms), for the records board. */
+  at?: number;
 }
 
 /** Where a race's credits came from (they sum to `creditsEarned`). */
@@ -44,6 +54,13 @@ export interface RaceOutcome {
   oldBest: number;
   newBest: number;
   unlockedCar: string | null;
+  /** The next track in the ladder, if this race's first clear opened it. */
+  unlockedTrack: string | null;
+  /**
+   * Where this race's best lap placed among your best on the track (1 = the
+   * new record), or null if it didn't make the board.
+   */
+  boardRank: number | null;
 }
 
 /**
@@ -142,6 +159,11 @@ export class Progression {
     return this.data.bestLaps[trackId] ?? Infinity;
   }
 
+  /** Your best laps on a track, fastest first (empty until you've raced it). */
+  recordsFor(trackId: string): LapRecord[] {
+    return this.data.records[trackId] ?? [];
+  }
+
   /** The best-lap ghost for a track, or empty if none recorded yet. */
   ghostFor(trackId: string): Ghost {
     return this.data.bestGhosts[trackId] ?? [];
@@ -153,9 +175,7 @@ export class Progression {
 
   /** Track 0 is always open; each later track needs its predecessor cleared. */
   isTrackUnlocked(index: number): boolean {
-    if (index <= 0) return true;
-    const prev = tracks[index - 1];
-    return prev === undefined || this.data.clearedTracks.includes(prev.id);
+    return isUnlocked(tracks, this.data.clearedTracks, index);
   }
 
   /**
@@ -194,6 +214,17 @@ export class Progression {
       if (result.bestLapGhost !== undefined)
         this.data.bestGhosts[result.trackId] = result.bestLapGhost;
     }
+    const unlockedTrack = result.finished
+      ? unlockedByClearing(tracks, this.data.clearedTracks, result.trackId)
+      : null;
+    const boardRank =
+      result.finished && validLap
+        ? this.addToBoard(result.trackId, {
+            ms: result.bestLapMs,
+            car: result.carId,
+            at: result.at ?? 0,
+          })
+        : null;
     if (result.finished && !this.isTrackCleared(result.trackId)) {
       this.data.clearedTracks.push(result.trackId);
     }
@@ -206,7 +237,17 @@ export class Progression {
       oldBest,
       newBest,
       unlockedCar: this.detectUnlock(creditsBefore),
+      unlockedTrack,
+      boardRank,
     };
+  }
+
+  /** Put a lap on a track's board: its place (1-based), or null off it. */
+  private addToBoard(trackId: string, lap: LapRecord): number | null {
+    const board = sortRecords([...this.recordsFor(trackId), lap]);
+    this.data.records[trackId] = board;
+    const i = board.indexOf(lap);
+    return i < 0 ? null : i + 1;
   }
 
   /**

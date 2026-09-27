@@ -8,6 +8,9 @@ import {
   markGrid,
   movedFromGrid,
   finishRaceFast,
+  fakePad,
+  tapPad,
+  PAD,
 } from "./fixtures.ts";
 
 const start = '[data-action="start"]';
@@ -132,4 +135,116 @@ test("resizing to a phone re-frames the menu backdrop", async ({ page }) => {
   const desktop = await zoom();
   await page.setViewportSize({ width: 844, height: 390 });
   await expect.poll(zoom).toBeLessThan(desktop * 0.8);
+});
+
+test("the menus work from the keyboard: arrows move, Enter picks, Esc backs out", async ({
+  page,
+}) => {
+  await seedSave(page, { ...ONBOARDED, credits: 500 });
+  await page.goto("/");
+  await page.keyboard.press("ArrowDown"); // the first press shows the cursor
+  await expect(page.locator(start)).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator('[data-action="garage"]')).toBeFocused();
+  await page.keyboard.press("Enter");
+  // The garage opens on its first upgrade; buying it keeps the cursor there.
+  await expect(page.locator('[data-buy="engine"]')).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".balance2")).toHaveText("380 cr");
+  await expect(page.locator('[data-buy="engine"]')).toBeFocused();
+  // Back on the menu, the cursor is where it was.
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-action="garage"]')).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Space");
+  await expect.poll(() => screen(page)).toBe("race");
+});
+
+test("a gamepad works the menus: d-pad moves, A picks, B backs out, Start pauses", async ({
+  page,
+}) => {
+  await fakePad(page);
+  await seedSave(page, ONBOARDED);
+  await page.goto("/");
+  await tapPad(page, PAD.down);
+  await expect(page.locator(start)).toBeFocused();
+  await tapPad(page, PAD.a);
+  await expect.poll(() => screen(page)).toBe("race");
+
+  await tapPad(page, PAD.start);
+  await expect(page.locator('[data-action="resume"]')).toBeFocused();
+  await tapPad(page, PAD.b); // B resumes
+  await expect(page.locator('[data-action="pause"]')).toBeVisible();
+
+  await tapPad(page, PAD.start);
+  await tapPad(page, PAD.down);
+  await tapPad(page, PAD.down);
+  await expect(page.locator('[data-action="quit"]')).toBeFocused();
+  await tapPad(page, PAD.a);
+  await expect(page.locator(".screen-menu")).toBeVisible();
+  await expect(page.locator(start)).toBeFocused();
+});
+
+test("a finished race can be watched back, then it's back to the results", async ({
+  page,
+}) => {
+  await seedSave(page, ONBOARDED);
+  await page.goto("/");
+  await page.locator(start).click();
+  await finishRaceFast(page);
+  await page.locator('[data-action="replay"]').click();
+  await expect(page.locator('[data-action="replay-toggle"]')).toHaveText(
+    "⏸ Pause",
+  );
+  const replayMs = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { game: { replays: { ms: number } } }).game
+          .replays.ms,
+    );
+  await expect.poll(replayMs).toBeGreaterThan(300); // it's playing
+  await page.locator('[data-action="replay-speed"]').click();
+  await expect(page.locator('[data-action="replay-speed"]')).toHaveText("2×");
+  await page.locator('[data-action="replay-exit"]').click();
+  await expect(page.locator(".results-panel")).toContainText("RACE RESULT");
+});
+
+test("records keep your best laps, and copy one to share", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await seedSave(page, ONBOARDED);
+  await page.goto("/");
+  await page.locator(start).click();
+  await finishRaceFast(page);
+  await page.locator('[data-action="menu"]').click();
+  await page.locator('[data-action="records"]').click();
+  await expect(page.locator(".board-card").first()).toContainText(
+    "Street Sedan",
+  );
+  await page.locator('[data-share="overture"]').click();
+  await expect(page.locator('[data-share="overture"]')).toHaveText("Copied ✓");
+  const text = await page.evaluate(() => navigator.clipboard.readText());
+  expect(text).toMatch(
+    /^RC Racer · Overture: \d:\d\d\.\d{3} in the Street Sedan\. Beat it\? http:\/\/localhost:4173\/$/,
+  );
+});
+
+test("the pause menu opens on Resume every time, whatever was picked last", async ({
+  page,
+}) => {
+  await fakePad(page);
+  await seedSave(page, ONBOARDED);
+  await page.goto("/");
+  await tapPad(page, PAD.down); // the cursor appears on Start
+  await tapPad(page, PAD.a);
+  await expect.poll(() => screen(page)).toBe("race");
+  await tapPad(page, PAD.start);
+  await tapPad(page, PAD.down);
+  await expect(page.locator('[data-action="restart"]')).toBeFocused();
+  await tapPad(page, PAD.a); // restart the race…
+  await expect(page.locator('[data-action="pause"]')).toBeVisible();
+  await tapPad(page, PAD.start); // …and pause it again
+  await expect(page.locator('[data-action="resume"]')).toBeFocused();
 });

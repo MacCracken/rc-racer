@@ -7,6 +7,10 @@ import {
   pauseHtml,
   onboardingHtml,
   settingsHtml,
+  replayHtml,
+  recordsHtml,
+  shareText,
+  ordinal,
   controlsHint,
   type UiModel,
   type ResultsView,
@@ -79,6 +83,8 @@ const BASE_OUTCOME = {
   oldBest: 4000,
   newBest: 4000,
   unlockedCar: null,
+  unlockedTrack: null,
+  boardRank: null,
 } as const;
 
 function resultsView(
@@ -282,5 +288,188 @@ describe("Results explain the payout; the menu shows your times", () => {
     expect(html).toContain("best <b>0:17.717</b>");
     expect(html).toMatch(/data-action="start"[^>]*>▶ Start race · Overture</);
     expect(html).toContain('class="menu-footer"');
+  });
+});
+
+describe("Menu, garage and results guide the next step", () => {
+  it("a locked track says what opens it instead of its flavour line", () => {
+    const m = model();
+    m.tracks.push({
+      ...m.tracks[0],
+      id: "hairpin",
+      name: "Hairpin",
+      selected: false,
+      unlocked: false,
+      vibe: "Tight & quick",
+      lockHint: "Clear Overture to unlock",
+    });
+    const html = menuHtml(m);
+    expect(html).toContain("🔒 Clear Overture to unlock");
+    expect(html).not.toContain("Tight &amp; quick");
+    expect(html).toMatch(/data-selecttrack="hairpin" disabled/);
+  });
+
+  it("the garage shows what each upgrade adds, and previews it on the bars", () => {
+    const m = model();
+    m.upgrades[0].gains = [
+      { key: "grip", label: "Grip", from: 0.5, to: 0.6, text: "+10" },
+    ];
+    const html = garageHtml(m);
+    expect(html).toContain("Grip <b>+10</b>");
+    expect(html).toContain(
+      '<span class="bar-gain" data-gain="tires" style="left:50%;width:10%"></span>',
+    );
+    expect(html).toContain(
+      '.screen-garage:has([data-buy="tires"]:is(:hover,:focus)) [data-gain="tires"]',
+    );
+    // Only a plain identifier goes into the <style> rule.
+    const odd = model();
+    odd.upgrades[0].slot = 'x"]{}*{color:red}';
+    odd.upgrades[0].gains = m.upgrades[0].gains;
+    const oddHtml = garageHtml(odd);
+    expect(oddHtml).not.toContain("<style>");
+    expect(oddHtml).toContain('data-buy="x&quot;]{}*{color:red}"');
+    // A maxed slot has nothing left to preview.
+    m.upgrades[0].maxed = true;
+    expect(garageHtml(m)).not.toContain("bar-gain");
+    expect(garageHtml(m)).not.toContain("<style>");
+  });
+
+  it("results offer the next track, first when this race unlocked it", () => {
+    const view = {
+      ...resultsView({ unlockedTrack: "hairpin" }),
+      nextTrack: { id: "hairpin", name: "Hairpin" },
+    };
+    const html = resultsHtml(view);
+    expect(html).toContain("★ Track unlocked: Hairpin");
+    expect(html).toMatch(
+      /class="primary" data-action="nexttrack">Next: Hairpin ▶<\/button>\s*<button class="ghost" data-action="raceagain">/,
+    );
+    expect(html).toContain('data-action="menu"');
+
+    // Already open: Race again stays the main action.
+    const again = resultsHtml({ ...resultsView(), nextTrack: view.nextTrack });
+    expect(again).not.toContain("Track unlocked");
+    expect(again).toMatch(/class="primary" data-action="raceagain"/);
+    expect(again).toMatch(/class="ghost" data-action="nexttrack"/);
+
+    // The last track: nowhere further to go.
+    expect(resultsHtml(resultsView())).not.toContain("nexttrack");
+  });
+});
+
+describe("The menu names each track's conditions", () => {
+  it("tags a track beside its name, and none when it has none", () => {
+    const m = model();
+    expect(menuHtml(m)).not.toContain('class="tag');
+    m.tracks[0].tags = ["Dirt", "Night"];
+    const html = menuHtml(m);
+    expect(html).toContain('<span class="tag tag-dirt">Dirt</span>');
+    expect(html).toContain('<span class="tag tag-night">Night</span>');
+  });
+
+  it("How to Play explains the conditions", () => {
+    expect(onboardingHtml(defaultKeyMap())).toContain("Conditions:");
+  });
+});
+
+describe("The menu shows each track's shape", () => {
+  it("draws its outline beside the name, tinted by its conditions", () => {
+    const m = model();
+    expect(menuHtml(m)).not.toContain("track-thumb"); // no outline, no svg
+    m.tracks[0].outline = { d: "M1 2 L3 4 Z", road: 5, start: { x: 1, y: 2 } };
+    m.tracks[0].tags = ["Dirt"];
+    const html = menuHtml(m);
+    expect(html).toContain('<svg class="track-thumb thumb-dirt"');
+    expect(html).toContain('<path d="M1 2 L3 4 Z" stroke-width="5.0"/>');
+    expect(html).toContain('<circle cx="1" cy="2"');
+  });
+});
+
+describe("Replays", () => {
+  it("the results offer one only when there's one to watch", () => {
+    expect(resultsHtml(resultsView())).not.toContain('data-action="replay"');
+    expect(resultsHtml({ ...resultsView(), canReplay: true })).toContain(
+      'data-action="replay"',
+    );
+  });
+
+  it("the replay controls say what they'll do", () => {
+    expect(replayHtml({ held: false, atEnd: false, speed: 1 })).toContain(
+      "⏸ Pause",
+    );
+    expect(replayHtml({ held: true, atEnd: false, speed: 2 })).toContain(
+      "▶ Play",
+    );
+    expect(replayHtml({ held: true, atEnd: false, speed: 2 })).toContain("2×");
+    expect(replayHtml({ held: true, atEnd: true, speed: 1 })).toContain(
+      "Watch again",
+    );
+    expect(replayHtml({ held: false, atEnd: false, speed: 1 })).toContain(
+      'data-action="replay-exit"',
+    );
+  });
+});
+
+describe("Records", () => {
+  it("the results say where a lap placed among your best, below the record", () => {
+    const html = resultsHtml({
+      ...resultsView({ boardRank: 3 }),
+      trackName: "Overture",
+    });
+    expect(html).toContain("3rd of your best laps on Overture");
+    // A new record says so itself.
+    expect(resultsHtml(resultsView({ boardRank: 1 }))).not.toContain(
+      "of your best laps",
+    );
+    expect(resultsHtml(resultsView())).not.toContain("of your best laps");
+  });
+
+  it("the menu opens them, and each board lists laps or says there are none", () => {
+    expect(menuHtml(model())).toContain('data-action="records"');
+    const html = recordsHtml({
+      tracks: [
+        {
+          id: "overture",
+          name: "Overture",
+          laps: [{ time: "0:17.642", car: "Street Sedan", date: "26 Sep" }],
+        },
+        { id: "hairpin", name: "Hairpin", laps: [] },
+      ],
+      copied: "overture",
+    });
+    expect(html).toContain("<b>0:17.642</b><span>Street Sedan</span>");
+    expect(html).toContain('data-share="overture">Copied ✓');
+    expect(html).not.toContain('data-share="hairpin"');
+    expect(html).toContain("No laps yet");
+    expect(html).toContain('data-action="menu"');
+  });
+
+  it("a shared best lap names the track, time and car, and links a web copy", () => {
+    expect(shareText("Overture", "0:17.642", "Street Sedan")).toBe(
+      "RC Racer · Overture: 0:17.642 in the Street Sedan. Beat it?",
+    );
+    expect(
+      shareText("Hairpin", "0:11.9", "", "https://example.com/rc-racer/"),
+    ).toBe(
+      "RC Racer · Hairpin: 0:11.9. Beat it? https://example.com/rc-racer/",
+    );
+    expect(shareText("A", "1", "B", "file:///x")).not.toContain("file:");
+  });
+
+  it("counts places the English way", () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101].map(ordinal)).toEqual([
+      "1st",
+      "2nd",
+      "3rd",
+      "4th",
+      "11th",
+      "12th",
+      "13th",
+      "21st",
+      "22nd",
+      "23rd",
+      "101st",
+    ]);
   });
 });

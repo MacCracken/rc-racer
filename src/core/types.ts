@@ -26,6 +26,11 @@ export interface RenderScene {
   speed: number;
   /** ms clock, for the live lap timer. */
   nowMs: number;
+  /**
+   * Wall-clock ms, for ambient animation (falling rain) that runs on the
+   * menus and while paused, when the race clock stands still.
+   */
+  timeMs?: number;
   /** Optional AI rival bodies to draw around the player. */
   rivals?: Matter.Body[];
   /** Live position (1 = P1) + field size for the HUD when racing a field. */
@@ -59,6 +64,8 @@ export interface RenderScene {
    * undefined draws none.
    */
   startClockMs?: number;
+  /** Watching a replay: how far in (ms), of how long, at what speed. */
+  replay?: { ms: number; totalMs: number; speed: number };
 }
 
 export interface IRenderer {

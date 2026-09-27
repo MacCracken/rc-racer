@@ -3,8 +3,8 @@ import { defineConfig } from "vite";
 import { resolve } from "node:path";
 
 export default defineConfig({
-  // Relative asset URLs, so the same dist/ works at any path: a GitHub Pages
-  // project site (/rc-racer/), a Netlify/Vercel root, or a zip opened locally.
+  // Relative asset URLs, so the same dist/ works at any path: a sub-path
+  // (/rc-racer/), a host's root, an itch.io upload, or a zip opened locally.
   base: "./",
   resolve: {
     alias: {

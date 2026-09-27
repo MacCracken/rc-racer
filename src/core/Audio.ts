@@ -63,6 +63,8 @@ export interface IAudio {
    */
   setEngine?(engine: EngineSound | null): void;
   setSkid?(amount: number): void;
+  /** The hiss of rain on a wet track (off everywhere else). */
+  setRain?(on: boolean): void;
 }
 
 /** The looping voices' audio graph, built on first use. */
@@ -74,6 +76,7 @@ interface Loops {
   engineTone: BiquadFilterNode;
   skid: GainNode;
   skidTone: BiquadFilterNode;
+  rain: GainNode;
 }
 
 /**
@@ -86,6 +89,7 @@ export class WebAudio implements IAudio {
   private loops: Loops | null = null;
   private engineOn = false;
   private skidOn = false;
+  private rainOn = false;
   muted = false;
 
   private ensure(): AudioContext | null {
@@ -204,6 +208,21 @@ export class WebAudio implements IAudio {
     this.skidOn = true;
   }
 
+  setRain(on: boolean): void {
+    if (!on) {
+      if (this.rainOn) this.fade(this.loops?.rain, 0);
+      this.rainOn = false;
+      return;
+    }
+    if (this.rainOn) return;
+    const L = this.ensureLoops();
+    // No voices yet (e.g. booted muted): not on, so the next frame retries.
+    if (L === null || this.ctx === null) return;
+    // Rain swells in and out slowly, under everything else.
+    L.rain.gain.setTargetAtTime(0.045, this.ctx.currentTime, 0.4);
+    this.rainOn = true;
+  }
+
   private fade(g: GainNode | undefined, to: number): void {
     if (g === undefined || this.ctx === null) return;
     g.gain.setTargetAtTime(to, this.ctx.currentTime, 0.06);
@@ -270,6 +289,22 @@ function buildLoops(ctx: AudioContext, muted: boolean): Loops {
   hiss.connect(skidTone).connect(skid).connect(master);
   hiss.start();
 
+  // Rain: the same noise, band-limited to a soft wash and looped from a
+  // different offset so it never beats against the squeal.
+  const shower = ctx.createBufferSource();
+  shower.buffer = noise;
+  shower.loop = true;
+  const rainLow = ctx.createBiquadFilter();
+  rainLow.type = "lowpass";
+  rainLow.frequency.value = 2200;
+  const rainHigh = ctx.createBiquadFilter();
+  rainHigh.type = "highpass";
+  rainHigh.frequency.value = 350;
+  const rain = ctx.createGain();
+  rain.gain.value = 0;
+  shower.connect(rainHigh).connect(rainLow).connect(rain).connect(master);
+  shower.start(0, noise.duration / 2);
+
   return {
     master,
     engine,
@@ -277,6 +312,7 @@ function buildLoops(ctx: AudioContext, muted: boolean): Loops {
     engineTone,
     skid,
     skidTone,
+    rain,
   };
 }
 
@@ -286,6 +322,7 @@ export class NullAudio implements IAudio {
   /** The last engine state / squeal set (what a real impl would be playing). */
   engine: EngineSound | null = null;
   skid = 0;
+  rain = false;
   muted = false;
   play(ev: SoundEvent, gain = 0.25): void {
     if (this.muted) return;
@@ -299,6 +336,9 @@ export class NullAudio implements IAudio {
   }
   setSkid(amount: number): void {
     this.skid = amount;
+  }
+  setRain(on: boolean): void {
+    this.rain = on;
   }
 }
 

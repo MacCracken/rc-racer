@@ -117,3 +117,46 @@ export async function finishRaceFast(page: Page): Promise<void> {
       g.onStep(1 / 120);
   });
 }
+
+/** A standard-mapping gamepad the page sees in place of a real one. */
+export async function fakePad(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const pad = {
+      connected: true,
+      axes: [0, 0, 0, 0],
+      buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
+    };
+    (window as unknown as { __pad: typeof pad }).__pad = pad;
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [pad],
+    });
+  });
+}
+
+/** Press and release a button of the fake pad, a few frames each. */
+export const PAD = {
+  a: 0,
+  b: 1,
+  start: 9,
+  up: 12,
+  down: 13,
+  left: 14,
+  right: 15,
+};
+export async function tapPad(page: Page, button: number): Promise<void> {
+  await page.evaluate(async (i) => {
+    type Btn = { pressed: boolean; value: number };
+    const pad = (window as unknown as { __pad: { buttons: Btn[] } }).__pad;
+    const frames = (n: number) =>
+      new Promise<void>((done) => {
+        let k = 0;
+        const tick = () => (++k >= n ? done() : requestAnimationFrame(tick));
+        requestAnimationFrame(tick);
+      });
+    pad.buttons[i] = { pressed: true, value: 1 };
+    await frames(3);
+    pad.buttons[i] = { pressed: false, value: 0 };
+    await frames(3);
+  }, button);
+}

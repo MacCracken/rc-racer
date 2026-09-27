@@ -15,6 +15,42 @@ function loop(fn: (t: number) => Vec2, n: number): Vec2[] {
   return Array.from({ length: n }, (_, i) => fn((i / n) * TAU));
 }
 
+/**
+ * `loop`, but with the `n` points spaced evenly by distance along the track.
+ * Shapes with long straights and tight corners (a squircle) bunch points up
+ * in the corners when sampled evenly in `t`; gates, scenery and the AI's
+ * look-ahead all count in points, so they want even spacing.
+ */
+function evenLoop(fn: (t: number) => Vec2, n: number): Vec2[] {
+  const fine = loop(fn, n * 40);
+  const at = [0]; // distance along `fine` to each point
+  for (let i = 1; i <= fine.length; i++) {
+    const a = fine[i - 1];
+    const b = fine[i % fine.length];
+    at.push(at[i - 1] + Math.hypot(b.x - a.x, b.y - a.y));
+  }
+  const total = at[fine.length];
+  const out: Vec2[] = [];
+  let j = 0;
+  for (let k = 0; k < n; k++) {
+    const s = (k / n) * total;
+    while (at[j + 1] < s) j++;
+    const a = fine[j];
+    const b = fine[(j + 1) % fine.length];
+    const f = (s - at[j]) / (at[j + 1] - at[j] || 1);
+    out.push({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+  }
+  return out;
+}
+
+/** A soft bump, 1 at `t0`, fading over ~`width` radians either side. */
+const bump = (t: number, t0: number, width: number): number =>
+  Math.exp(-(((t - t0) / width) ** 2));
+
+/** A squircle coordinate: |cos|^p keeps sides straight and corners square. */
+const squircle = (v: number, p: number): number =>
+  Math.sign(v) * Math.abs(v) ** p;
+
 // --- Overture: a wide, wavy grand-prix style circuit. ---
 export const overture: TrackDef = {
   id: "overture",
@@ -62,16 +98,17 @@ export const hairpin: TrackDef = {
   rivals: { car: "street-sedan", tier: 0 },
 };
 
-// --- Dust Bowl: a rough, high-grip-needed oval. ---
+// --- Dust Bowl: a rough, narrow dirt oval. ---
 export const dustBowl: TrackDef = {
   id: "dust-bowl",
-  vibe: "A brutal grind",
+  vibe: "A brutal grind in the dirt",
   difficulty: 3,
   name: "Dust Bowl",
   laps: 5,
   width: 110,
   background: "#1a140a",
   surface: "#6b5636",
+  terrain: "dirt",
   centerLine: loop(
     (t) => ({
       x: Math.cos(t) * 460,
@@ -80,9 +117,89 @@ export const dustBowl: TrackDef = {
     64,
   ),
   gateCount: 8,
-  parLapMs: 14000,
+  parLapMs: 14500,
   aiPace: 0.8,
   rivals: { car: "brawler", tier: 0 },
+};
+
+// --- Gravel Pit: a loose dirt triangle. Long slides into one tight apex. ---
+export const gravelPit: TrackDef = {
+  id: "gravel-pit",
+  name: "Gravel Pit",
+  laps: 3,
+  width: 130,
+  background: "#1d170c",
+  surface: "#8a7050",
+  terrain: "dirt",
+  vibe: "Loose gravel, long slides",
+  difficulty: 2,
+  // Started half a turn round, so the grid sits on the long left straight.
+  centerLine: evenLoop((u) => {
+    const t = u + Math.PI;
+    return {
+      x: Math.cos(t) * 480 + Math.cos(2 * t) * 85 + Math.sin(4 * t) * 22,
+      y: Math.sin(t) * 370 - Math.sin(2 * t) * 85 + Math.cos(4 * t) * 10,
+    };
+  }, 104),
+  gateCount: 8,
+  parLapMs: 16500,
+  aiPace: 0.8,
+  // Off-road buggies, detuned: an early upgrade or two gets a sedan past.
+  rivals: { car: "buggy", tier: 0, factor: 0.8 },
+};
+
+// --- Monsoon: a square street circuit, soaked. Brake early for every corner. ---
+export const monsoon: TrackDef = {
+  id: "monsoon",
+  name: "Monsoon",
+  laps: 3,
+  width: 130,
+  background: "#0a1511",
+  surface: "#2c343b",
+  weather: "rain",
+  vibe: "Standing water — brake early",
+  difficulty: 3,
+  centerLine: evenLoop((t) => {
+    // A dip into the top straight, and an S across the bottom one.
+    const s = (t - 0.5 * Math.PI) / 0.14;
+    return {
+      x: 560 * squircle(Math.cos(t), 0.42),
+      y:
+        340 * squircle(Math.sin(t), 0.42) +
+        170 * bump(t, 1.5 * Math.PI, 0.2) +
+        60 * s * Math.exp(-s * s),
+    };
+  }, 120),
+  gateCount: 10,
+  parLapMs: 18000,
+  aiPace: 0.8,
+  rivals: { car: "street-sedan", tier: 2 },
+};
+
+// --- Midnight: the finale, a flowing circuit with a hairpin, after dark. ---
+export const midnight: TrackDef = {
+  id: "midnight",
+  name: "Midnight",
+  laps: 4,
+  width: 125,
+  background: "#0c1d12",
+  surface: "#39404a",
+  lighting: "night",
+  vibe: "Racing by headlight",
+  difficulty: 5,
+  // The hairpin on the left is kept round enough (a gentle 3rd harmonic) that
+  // no line through it can cut the apex and miss its gate.
+  centerLine: evenLoop(
+    (t) => ({
+      x: Math.cos(t) * 520 + Math.cos(3 * t) * 25 - Math.sin(2 * t) * 60,
+      y: Math.sin(t) * 400 + Math.sin(2 * t) * 90 + Math.cos(5 * t) * 20,
+    }),
+    128,
+  ),
+  gateCount: 10,
+  parLapMs: 16500,
+  aiPace: 0.8,
+  rivals: { car: "brawler", tier: 1 },
 };
 
 // --- Riverbend: a big, flowing wavy oval. Wide, forgiving. ---
@@ -155,11 +272,19 @@ export const slalom: TrackDef = {
   rivals: { car: "street-sedan", tier: 2 },
 };
 
+/**
+ * The ladder, in unlock order. Rival strength climbs along it: the sedan
+ * build needed to win never drops from one track to the next (see
+ * `Rivals.test.ts`), and the conditions tracks are spread through it.
+ */
 export const tracks: TrackDef[] = [
   overture,
   hairpin,
   riverbend,
+  gravelPit,
   clover,
   dustBowl,
+  monsoon,
   slalom,
+  midnight,
 ];

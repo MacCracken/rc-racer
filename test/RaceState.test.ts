@@ -7,7 +7,7 @@ import {
 import { buildTrack, type TrackDef } from "../src/track/Track.ts";
 import { overture, tracks } from "../src/track/tracks.ts";
 import type { Vec2 } from "../src/core/vec.ts";
-import { createCarWorld, stepCar } from "../src/physics/MatterCar.ts";
+import { createArena, stepCar } from "../src/physics/MatterCar.ts";
 import { makeDriver } from "../src/race/AiDriver.ts";
 import { FIXED_DT } from "../src/core/tuning.ts";
 import { applyBuild, freshUpgrades } from "../src/game/upgrades.ts";
@@ -140,9 +140,12 @@ describe("RaceState lap timing over a real per-tick physics feed", () => {
     overture: 17725,
     hairpin: 12000,
     riverbend: 17467,
+    "gravel-pit": 16275,
     clover: 17333,
-    "dust-bowl": 13667,
+    "dust-bowl": 14617, // on dirt: less grip, a lower top end
+    monsoon: 18100,
     slalom: 14450,
+    midnight: 16467,
   };
 
   const sedanStats = applyBuild(
@@ -152,23 +155,25 @@ describe("RaceState lap timing over a real per-tick physics feed", () => {
 
   function driveToFinish(def: TrackDef): RaceState {
     const track = buildTrack(def);
-    const world = createCarWorld(track);
+    // As the game races it: the arena applies the track's conditions.
+    const arena = createArena(track, sedanStats);
+    const { body: car, stats } = arena.cars[0];
     let clockMs = 0;
     const race = new RaceState(track, () => clockMs);
     const driver = makeDriver(track, {
       pace: def.aiPace ?? 1,
       lookahead: 0.05,
     });
-    let prev: Vec2 = { x: world.car.position.x, y: world.car.position.y };
+    let prev: Vec2 = { x: car.position.x, y: car.position.y };
     const cap = Math.ceil(90 / FIXED_DT);
     for (let s = 0; s < cap && !race.finished; s++) {
       const inp = driver({
-        position: world.car.position,
-        velocity: world.car.velocity,
-        angle: world.car.angle,
+        position: car.position,
+        velocity: car.velocity,
+        angle: car.angle,
       });
-      stepCar(world.car, world.walls, track, inp, sedanStats, FIXED_DT);
-      const cur: Vec2 = { x: world.car.position.x, y: world.car.position.y };
+      stepCar(car, arena.walls, track, inp, stats, FIXED_DT);
+      const cur: Vec2 = { x: car.position.x, y: car.position.y };
       // Per-tick (prev -> cur): the feed that respects the real path.
       race.update(prev, cur);
       prev = cur;

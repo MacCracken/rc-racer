@@ -8,6 +8,7 @@ import {
   type CarStats,
 } from "../core/tuning.ts";
 import { gridSlot, type BuiltTrack } from "../track/Track.ts";
+import { applyConditions, conditionsOf } from "../track/conditions.ts";
 import type { InputState } from "../core/Input.ts";
 
 const CAR_HALF = Math.max(CAR_LENGTH, CAR_WIDTH) / 2;
@@ -117,6 +118,7 @@ export function createCarWorld(track: BuiltTrack): CarWorld {
 export interface ArenaCar {
   isPlayer: boolean;
   body: M.Body;
+  /** The car's stats as it drives on this track (conditions applied). */
   stats: CarStats;
   /** 0..1 target pace (ignored for the player). */
   pace?: number;
@@ -137,17 +139,23 @@ export interface RivalSpec {
   pace: number;
 }
 
+/**
+ * The cars on a track, player first. Every car drives the track's conditions
+ * (see `track/conditions.ts`): rain or dirt costs the whole field grip, not
+ * just the player.
+ */
 export function createArena(
   track: BuiltTrack,
   playerStats: CarStats,
   rivals: RivalSpec[] = [],
 ): Arena {
   const walls = buildWalls(track);
+  const conditions = conditionsOf(track.def);
   const cars: ArenaCar[] = [
     {
       isPlayer: true,
       body: createCarBody(track, playerStats, 0),
-      stats: playerStats,
+      stats: applyConditions(playerStats, conditions),
       label: "you",
     },
   ];
@@ -155,7 +163,7 @@ export function createArena(
     cars.push({
       isPlayer: false,
       body: createCarBody(track, r.stats, i + 1),
-      stats: r.stats,
+      stats: applyConditions(r.stats, conditions),
       pace: r.pace,
       label: `rival${i + 1}`,
     });

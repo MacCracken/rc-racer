@@ -21,10 +21,11 @@ import { speedZoom, type Camera } from "../../src/core/Camera.ts";
 import { NullAudio } from "../../src/core/Audio.ts";
 import { freshUpgrades, SLOTS } from "../../src/game/upgrades.ts";
 import type { Ghost } from "../../src/race/Ghost.ts";
-import type { ResultsView } from "../../src/ui/ui.ts";
+import type { ResultsView, UiModel } from "../../src/ui/ui.ts";
 import { podiumBonus } from "../../src/game/economy.ts";
 import { GamepadInput, type PadLike } from "../../src/core/Gamepad.ts";
 import { viewScaleFor } from "../../src/game/Game.ts";
+import type { ReplayPlayer } from "../../src/race/ReplayPlayer.ts";
 import { currentLapTimeMs } from "../../src/race/RaceState.ts";
 
 /**
@@ -56,7 +57,10 @@ interface GameInternals {
   showOpeningScreen(): void;
   lastResults: ResultsView | null;
   gamepad: GamepadInput;
-  pollGamepad(): void;
+  pollGamepad(nowMs?: number): void;
+  uiModel(): UiModel;
+  rebinding: string | null;
+  replays: ReplayPlayer;
 }
 
 /**
@@ -590,6 +594,32 @@ describe("Game — engine and tyre audio", () => {
     expect(pitchOf("brawler")).toBeLessThan(1);
   });
 
+  it("rains on a wet track's race, not on a dry one, the menu or a pause", () => {
+    const prog = Progression.fresh();
+    prog.data.clearedTracks = prog.data.clearedTracks.concat(
+      "overture",
+      "hairpin",
+      "riverbend",
+      "gravel-pit",
+      "clover",
+      "dust-bowl",
+    );
+    prog.selectTrack("monsoon");
+    const { g, audio } = makeGame(0, prog);
+    g.presentAudio();
+    expect(audio.rain).toBe(false); // menu
+    g.startRace();
+    g.presentAudio();
+    expect(audio.rain).toBe(true);
+    g.pause();
+    expect(audio.rain).toBe(false);
+
+    const dry = makeGame();
+    dry.g.startRace();
+    dry.g.presentAudio();
+    expect(dry.audio.rain).toBe(false);
+  });
+
   it("squeals through a handbrake slide", () => {
     const { g, audio } = makeGame();
     g.startRace();
@@ -665,6 +695,238 @@ describe("Game — first launch", () => {
   });
 });
 
+/** A pad whose held buttons (by standard index) a test sets. */
+function testPad(g: GameInternals): { hold(...i: number[]): void } {
+  let held = new Set<number>();
+  g.gamepad = new GamepadInput(() => [
+    {
+      connected: true,
+      axes: [0, 0],
+      buttons: Array.from({ length: 17 }, (_, i) => ({
+        pressed: held.has(i),
+        value: held.has(i) ? 1 : 0,
+      })),
+    },
+  ]);
+  return { hold: (...i: number[]) => void (held = new Set(i)) };
+}
+
+/**
+ * Press and release a pad button, polling as frames would: idle first (a
+ * live game polls every frame, which clears a new screen's latch), then held,
+ * then let go.
+ */
+function tapPad(g: GameInternals, pad: ReturnType<typeof testPad>, i: number) {
+  pad.hold();
+  g.pollGamepad();
+  pad.hold(i);
+  g.pollGamepad();
+  pad.hold();
+  g.pollGamepad();
+}
+
+describe("Game — watching the race back", () => {
+  /** A finished race on the default track, with the results up. */
+  function raced() {
+    const made = makeGame();
+    made.g.startRace();
+    autopilot(made.g);
+    runToFinish(made.g);
+    return made;
+  }
+
+  it("records the whole race and offers it on the results", () => {
+    const { g, uiRoot } = raced();
+    expect(g.lastResults?.canReplay).toBe(true);
+    expect(uiRoot.innerHTML).toContain('data-action="replay"');
+    expect(g.replays.replay[0].t).toBe(0);
+    expect(g.replays.replay[g.replays.replay.length - 1].t).toBeCloseTo(
+      g.clockMs,
+      6,
+    );
+    expect(g.replays.replay[0].cars).toHaveLength(4); // the player and the field
+  });
+
+  it("replays where the car really was, at the speed chosen", () => {
+    const { g } = raced();
+    const mid = g.replays.replay[Math.floor(g.replays.replay.length / 2)];
+    click(g, { "data-action": "replay" });
+    expect(g.screen).toBe("replay");
+    run(g, mid.t / 1000);
+    const car = g.arena.cars[0].body.position;
+    expect(
+      Math.hypot(car.x - mid.cars[0].x, car.y - mid.cars[0].y),
+    ).toBeLessThan(2);
+
+    click(g, { "data-action": "replay-speed" });
+    const at = g.replays.ms;
+    run(g, 1);
+    expect(g.replays.ms - at).toBeCloseTo(2000, 0); // 2×
+    click(g, { "data-action": "replay-toggle" });
+    const held = g.replays.ms;
+    run(g, 1);
+    expect(g.replays.ms).toBe(held);
+  });
+
+  it("stops at the flag and offers to watch again", () => {
+    const { g, uiRoot } = raced();
+    click(g, { "data-action": "replay" });
+    click(g, { "data-action": "replay-speed" }); // 2×
+    click(g, { "data-action": "replay-speed" }); // 4×
+    run(g, 20); // 80 s of replay: well past the flag
+    expect(uiRoot.innerHTML).toContain("Watch again");
+    click(g, { "data-action": "replay-toggle" });
+    expect(g.replays.ms).toBe(0);
+  });
+
+  it("leaves the results as they were: Esc (or ◀ Results) goes back", () => {
+    const { g, prog } = raced();
+    const credits = prog.credits;
+    const results = g.lastResults;
+    click(g, { "data-action": "replay" });
+    run(g, 2);
+    g.onKeyDown(keydown("Escape"));
+    expect(g.screen).toBe("results");
+    expect(g.lastResults).toBe(results);
+    expect(prog.credits).toBe(credits);
+    click(g, { "data-action": "replay" });
+    click(g, { "data-action": "replay-exit" });
+    expect(g.screen).toBe("results");
+  });
+
+  it("holding Esc leaves a replay for its results, and no further", () => {
+    const { g } = raced();
+    click(g, { "data-action": "replay" });
+    g.onKeyDown(keydown("Escape"));
+    expect(g.screen).toBe("results");
+    g.onKeyDown(keydown("Escape", { repeat: true })); // still held
+    expect(g.screen).toBe("results");
+    expect(g.lastResults).not.toBeNull();
+  });
+
+  it("is silent, and shows a REPLAY badge instead of the race HUD", () => {
+    const { g, audio, lastScene } = raced();
+    click(g, { "data-action": "replay" });
+    run(g, 1);
+    g.presentAudio();
+    expect(audio.engine).toBeNull();
+    g.renderScene();
+    expect(lastScene()?.hud).toBe(false);
+    expect(lastScene()?.replay?.ms).toBeGreaterThan(0);
+  });
+});
+
+describe("Game — records", () => {
+  it("a race's best lap lands on the track's board, shown on Records", () => {
+    const { g, uiRoot, prog } = makeGame();
+    g.startRace();
+    autopilot(g);
+    runToFinish(g);
+    expect(g.lastResults?.outcome.boardRank).toBe(1);
+    expect(g.lastResults?.trackName).toBe("Overture");
+    const [lap] = prog.recordsFor("overture");
+    expect(lap.ms).toBe(g.playerRace.bestLapMs);
+    expect(lap.car).toBe("street-sedan");
+    expect(lap.at).toBeGreaterThan(0);
+
+    click(g, { "data-action": "menu" });
+    click(g, { "data-action": "records" });
+    expect(g.screen).toBe("records");
+    expect(uiRoot.innerHTML).toContain("Street Sedan");
+    expect(uiRoot.innerHTML).toContain('data-share="overture"');
+    // Only open tracks have boards: Hairpin just opened, Riverbend hasn't.
+    expect(uiRoot.innerHTML).toContain("Hairpin");
+    expect(uiRoot.innerHTML).not.toContain("Riverbend");
+    g.onKeyDown(keydown("Escape"));
+    expect(g.screen).toBe("menu");
+  });
+
+  it("where there's no clipboard, 'Copy best' shows the line to copy by hand", () => {
+    const { g, uiRoot } = makeGame();
+    g.startRace();
+    autopilot(g);
+    runToFinish(g);
+    click(g, { "data-action": "records" });
+    click(g, { "data-share": "overture" });
+    expect(uiRoot.innerHTML).toMatch(
+      /Copy this: <span>RC Racer · Overture: \d:\d\d\.\d{3} in the Street Sedan\. Beat it\?<\/span>/,
+    );
+    click(g, { "data-action": "records" }); // reopened: the line is gone
+    expect(uiRoot.innerHTML).not.toContain("Copy this:");
+  });
+});
+
+describe("Game — the menus by keyboard", () => {
+  it("a throttle key held over the finish line doesn't wander the results", () => {
+    const { g } = makeGame();
+    g.startRace();
+    autopilot(g);
+    runToFinish(g);
+    const moves: string[] = [];
+    (g as unknown as { nav: { move(d: string): void } }).nav.move = (d) =>
+      void moves.push(d);
+    g.onKeyDown(keydown("ArrowUp", { repeat: true })); // still held
+    g.onKeyDown(keydown("KeyS", { repeat: true }));
+    expect(moves).toEqual([]);
+    g.onKeyDown(keydown("ArrowDown")); // a fresh press moves
+    g.onKeyDown(keydown("ArrowDown", { repeat: true })); // and may repeat
+    expect(moves).toEqual(["down", "down"]);
+  });
+});
+
+describe("Game — the menus by gamepad", () => {
+  const B = 1;
+  const START = 9;
+
+  it("B backs out of a screen to the menu, and resumes a paused race", () => {
+    const { g } = makeGame();
+    const pad = testPad(g);
+    click(g, { "data-action": "garage" });
+    tapPad(g, pad, B);
+    expect(g.screen).toBe("menu");
+    tapPad(g, pad, B); // already on the menu: nowhere further back
+    expect(g.screen).toBe("menu");
+
+    g.startRace();
+    tapPad(g, pad, START);
+    expect(g.paused).toBe(true);
+    tapPad(g, pad, B);
+    expect(g.paused).toBe(false);
+    expect(g.screen).toBe("race");
+  });
+
+  it("B cancels a key capture before it leaves Settings", () => {
+    const { g } = makeGame();
+    const pad = testPad(g);
+    click(g, { "data-action": "settings" });
+    click(g, { "data-bind": "handbrake" });
+    expect(g.rebinding).toBe("handbrake");
+    tapPad(g, pad, B);
+    expect(g.rebinding).toBeNull();
+    expect(g.screen).toBe("settings");
+    tapPad(g, pad, B);
+    expect(g.screen).toBe("menu");
+  });
+
+  it("B on How to Play counts it as seen", () => {
+    const { g, store } = makeGame();
+    const pad = testPad(g);
+    g.showOpeningScreen();
+    tapPad(g, pad, B);
+    expect(g.screen).toBe("menu");
+    expect(store.load()?.settings.onboarded).toBe(true);
+  });
+
+  it("the pad's buttons don't work the menus while racing", () => {
+    const { g } = makeGame();
+    const pad = testPad(g);
+    g.startRace();
+    tapPad(g, pad, B);
+    expect(g.screen).toBe("race");
+    expect(g.paused).toBe(false);
+  });
+});
+
 describe("Game — gamepad and small screens", () => {
   it("a gamepad's Start pauses and resumes a race, once per press", () => {
     const { g } = makeGame();
@@ -697,5 +959,71 @@ describe("Game — gamepad and small screens", () => {
     expect(viewScaleFor(844, 390)).toBeCloseTo(0.65, 9); // landscape phone
     expect(viewScaleFor(390, 844)).toBeCloseTo(0.65, 9); // portrait
     expect(viewScaleFor(200, 150)).toBe(0.5); // floor
+  });
+});
+
+describe("Game — results lead on", () => {
+  it("a first clear offers the track it opened, and 'Next' races there", () => {
+    const { g, uiRoot, store } = makeGame();
+    g.startRace();
+    autopilot(g);
+    runToFinish(g);
+    expect(g.lastResults?.outcome.unlockedTrack).toBe("hairpin");
+    expect(g.lastResults?.nextTrack).toEqual({
+      id: "hairpin",
+      name: "Hairpin",
+    });
+    expect(uiRoot.innerHTML).toContain('data-action="nexttrack"');
+    click(g, { "data-action": "nexttrack" });
+    expect(g.screen).toBe("race");
+    expect(g.arena.track.def.id).toBe("hairpin");
+    expect(g.clockMs).toBe(0);
+    expect(store.load()?.selectedTrack).toBe("hairpin");
+  });
+
+  it("Menu from the results parks a fresh preview car, as Esc does", () => {
+    const { g } = makeGame();
+    g.startRace();
+    autopilot(g);
+    runToFinish(g);
+    click(g, { "data-action": "menu" });
+    expect(g.screen).toBe("menu");
+    expect(g.arena.cars).toHaveLength(1); // the finished field is gone
+    expect(g.lastResults).toBeNull();
+  });
+});
+
+describe("Game — the garage previews each upgrade", () => {
+  it("every buyable slot says which bars its next tier moves; maxed ones don't", () => {
+    const prog = Progression.fresh();
+    prog.data.upgrades["street-sedan"].engine = 4; // maxed
+    const { g } = makeGame(0, prog);
+    const rows = g.uiModel().upgrades;
+    for (const u of rows) {
+      if (u.maxed) expect(u.gains, u.slot).toEqual([]);
+      else expect(u.gains!.length, u.slot).toBeGreaterThan(0);
+    }
+    expect(rows.find((u) => u.slot === "engine")!.maxed).toBe(true);
+    const tires = rows.find((u) => u.slot === "tires")!;
+    expect(tires.gains!.map((x) => x.key)).toEqual(["grip", "braking"]);
+  });
+
+  it("the menu tags each track with its conditions", () => {
+    const { g } = makeGame();
+    const tags = Object.fromEntries(
+      g.uiModel().tracks.map((t) => [t.id, t.tags]),
+    );
+    expect(tags.overture).toEqual([]);
+    expect(tags["gravel-pit"]).toEqual(["Dirt"]);
+    expect(tags.monsoon).toEqual(["Rain"]);
+    expect(tags.midnight).toEqual(["Night"]);
+  });
+
+  it("locked tracks name the clear that opens them", () => {
+    const { g } = makeGame();
+    const tracks = g.uiModel().tracks;
+    expect(tracks[0].unlocked).toBe(true);
+    expect(tracks[1].unlocked).toBe(false);
+    expect(tracks[1].lockHint).toBe("Clear Overture to unlock");
   });
 });

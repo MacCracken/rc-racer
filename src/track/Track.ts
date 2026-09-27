@@ -1,5 +1,12 @@
 import { type Vec2, add, perp, normalize, sub } from "../core/vec.ts";
 
+/** What the cars drive on (see `track/conditions.ts` for what each does). */
+export type Terrain = "tarmac" | "dirt";
+/** The weather over the track. */
+export type Weather = "clear" | "rain";
+/** Day, or night by headlights and trackside lamps. */
+export type Lighting = "day" | "night";
+
 /**
  * A track, authored as a closed centerline loop + a width. Everything else
  * (walls, gates, start/finish, bounds) is *derived* from that, so a track is
@@ -34,6 +41,10 @@ export interface TrackDef {
    * Defaults to stock street sedans.
    */
   rivals?: { car: string; tier: number; factor?: number };
+  /** Conditions: tarmac, clear and day unless a track says otherwise. */
+  terrain?: Terrain;
+  weather?: Weather;
+  lighting?: Lighting;
 }
 
 export interface Gate {
