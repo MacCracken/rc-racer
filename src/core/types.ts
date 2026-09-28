@@ -66,6 +66,25 @@ export interface RenderScene {
   startClockMs?: number;
   /** Watching a replay: how far in (ms), of how long, at what speed. */
   replay?: { ms: number; totalMs: number; speed: number };
+  /**
+   * Lap news across the middle of the screen, `ageMs` since it went up (see
+   * `race/Callouts.ts`): the lap time just done, a best or a record, the
+   * final lap.
+   */
+  callout?: {
+    title: string;
+    detail?: string;
+    tone: "record" | "best" | "final" | "lap";
+    ageMs: number;
+  };
+  /** Heading the wrong way round the track: warn. */
+  wrongWay?: boolean;
+  /**
+   * The closest zoom the camera reaches on this screen (the shot on the
+   * grid), so the static track art can be painted sharp enough for it up
+   * front instead of repainting as a race starts.
+   */
+  artZoom?: number;
 }
 
 export interface IRenderer {

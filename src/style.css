@@ -367,6 +367,14 @@ button {
   font-size: 16px;
 }
 
+/* Straight back out from the garage to the track: the loop is race, tune,
+   race. */
+.panel-head .garage-race {
+  margin-top: 0;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
 .garage-body {
   display: flex;
   gap: 30px;
@@ -632,6 +640,56 @@ button {
   color: #7dff9b;
   font-size: 14px;
   margin-top: 6px;
+}
+
+/* Off the podium, with the next track still shut: what opens it. */
+.result-locked {
+  color: #ffcf7a;
+  font-size: 14px;
+  margin-top: 6px;
+}
+
+/* The finishing order: place, driver, time (the winner) or gap. */
+.standings {
+  list-style: none;
+  margin: 10px auto 4px;
+  padding: 0;
+  max-width: 260px;
+  font-size: 14px;
+  color: #9fb4a8;
+  text-align: left;
+}
+
+.standings li {
+  display: flex;
+  gap: 10px;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.standings span {
+  width: 1.2em;
+  text-align: right;
+}
+
+.standings b {
+  flex: 1;
+  font-weight: 600;
+  color: #cfe0d6;
+}
+
+.standings i {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.standings li.you {
+  background: rgba(255, 233, 168, 0.12);
+  color: #ffe9a8;
+}
+
+.standings li.you b {
+  color: #ffe9a8;
 }
 
 .results-actions {
@@ -1073,6 +1131,11 @@ button {
   .panel-head {
     font-size: 18px;
     gap: 10px;
+  }
+
+  /* Just "▶ Race": the head has room for little else. */
+  .garage-race-track {
+    display: none;
   }
 
   .setting-row.key-row .key-btn {

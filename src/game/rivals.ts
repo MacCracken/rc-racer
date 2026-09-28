@@ -6,6 +6,7 @@
  */
 import type { TrackDef } from "../track/Track.ts";
 import type { CarStats } from "../core/tuning.ts";
+import type { RivalSpec } from "../physics/MatterCar.ts";
 import { carById, defaultCar, type CarClass } from "./cars.ts";
 import { applyBuild, freshUpgrades, maxTierFor, SLOTS } from "./upgrades.ts";
 
@@ -38,17 +39,30 @@ export function rivalStatsFor(def: TrackDef): CarStats {
 }
 
 /**
- * The whole field: `count` rivals, spread a little in car and pace so they
- * string out legibly, the last one being the track's full-strength rival.
+ * The weakest rival runs this share of the full-strength car's speed, pull
+ * and grip; the field spreads evenly up to the full one. Starting from the
+ * back, a podium (passing one car) comes well before a win (the whole pack).
  */
-export function rivalField(
-  def: TrackDef,
-  count: number,
-): { stats: CarStats; pace: number }[] {
+export const FIELD_SPREAD = 0.93;
+
+/**
+ * Who races you, weakest first: the same crew on every track, so the one on
+ * pole is always Mako.
+ */
+export const RIVAL_NAMES: readonly string[] = ["Rook", "Vex", "Mako"];
+
+/**
+ * The whole field: `count` rivals, spread in car and pace so they string
+ * out legibly, weakest first; the last one is the track's full-strength
+ * rival (and starts on pole, see `createArena`).
+ */
+export function rivalField(def: TrackDef, count: number): RivalSpec[] {
   const top = rivalStatsFor(def);
   const basePace = def.aiPace ?? 0.78;
+  const mass = rivalCarFor(def).mass ?? 1;
   return Array.from({ length: count }, (_, i) => {
-    const f = count <= 1 ? 1 : 0.95 + (0.05 * i) / (count - 1);
+    const f =
+      count <= 1 ? 1 : FIELD_SPREAD + ((1 - FIELD_SPREAD) * i) / (count - 1);
     return {
       stats: {
         ...top,
@@ -56,7 +70,9 @@ export function rivalField(
         accel: top.accel * f,
         grip: top.grip * f,
       },
-      pace: Math.min(0.98, basePace + (i - 1) * 0.05),
+      pace: Math.min(0.98, basePace + (i - 1) * 0.03),
+      mass,
+      name: RIVAL_NAMES[RIVAL_NAMES.length - count + i] ?? `Rival ${i + 1}`,
     };
   });
 }

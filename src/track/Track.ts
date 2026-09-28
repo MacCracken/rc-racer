@@ -103,11 +103,16 @@ export function buildTrack(def: TrackDef): BuiltTrack {
   const outer = cl.map((p, i) => add(p, scaleNormal(normals[i], half)));
   const inner = cl.map((p, i) => add(p, scaleNormal(normals[i], -half)));
 
-  // Gates: evenly spaced around the loop, gate 0 = start/finish.
+  // Gates: evenly spaced around the loop, gate 0 = start/finish. A gate in a
+  // bend tighter than half the road would sit where its inside edge folds
+  // over itself, and a car hugging that apex could slip round the gate's end
+  // and have to drive a whole extra lap to it: each is nudged a few points to
+  // where the road is open.
   const gateCount = def.gateCount ?? Math.max(4, Math.round(n / 6));
   const gates: Gate[] = [];
   for (let k = 0; k < gateCount; k++) {
-    const i = Math.floor((k / gateCount) * n) % n;
+    const even = Math.floor((k / gateCount) * n) % n;
+    const i = k === 0 ? even : openSpot(cl, even, half * GATE_OPEN_BEND);
     const center = cl[i];
     const normal = normals[i];
     const tangent = tangents[i];
@@ -165,6 +170,39 @@ export function buildTrack(def: TrackDef): BuiltTrack {
 // Local helper kept out of the hot map callback for readability.
 function scaleNormal(normal: Vec2, s: number): Vec2 {
   return { x: normal.x * s, y: normal.y * s };
+}
+
+/** A gate goes where the bend's radius is at least this many half-widths. */
+const GATE_OPEN_BEND = 1.3;
+/** How far (in points) a gate may move from its evenly spaced spot. */
+const GATE_NUDGE = 4;
+
+/** Radius (px) of the bend at centerline point `i`, across ±2 points. */
+function bendAt(cl: Vec2[], i: number): number {
+  const n = cl.length;
+  const a = cl[(i - 2 + n) % n];
+  const b = cl[i];
+  const c = cl[(i + 2) % n];
+  const cross = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+  if (cross < 1e-9) return Infinity;
+  const ab = Math.hypot(b.x - a.x, b.y - a.y);
+  const bc = Math.hypot(c.x - b.x, c.y - b.y);
+  const ca = Math.hypot(a.x - c.x, a.y - c.y);
+  return (ab * bc * ca) / (2 * cross);
+}
+
+/**
+ * The nearest centerline point to `i` (within `GATE_NUDGE`) whose bend is
+ * at least `radius` wide; `i` itself if none is.
+ */
+function openSpot(cl: Vec2[], i: number, radius: number): number {
+  const n = cl.length;
+  for (let d = 0; d <= GATE_NUDGE; d++)
+    for (const j of d === 0 ? [i] : [i + d, i - d]) {
+      const k = (j + n) % n;
+      if (bendAt(cl, k) >= radius) return k;
+    }
+  return i;
 }
 
 /** Spacing between starting-grid rows (a car length plus a gap). */

@@ -20,6 +20,8 @@ export interface CarClass {
   look: CarLook;
   /** Engine pitch multiplier (1 = sedan): small motors whine, big ones growl. */
   enginePitch?: number;
+  /** How hard it is to shove in a contact (1 = the sedan). */
+  mass?: number;
 }
 
 export const carClasses: CarClass[] = [
@@ -45,30 +47,32 @@ export const carClasses: CarClass[] = [
     id: "buggy",
     name: "1/10 Buggy",
     classLabel: "1/10",
-    blurb: "Light and quick with a huge top end — but twitchy and low grip.",
+    blurb:
+      "Light and quick with a big top end — but twitchy, and short of grip in the wet.",
     base: {
-      maxSpeed: 245,
-      accel: 175,
-      braking: 200,
+      maxSpeed: 225,
+      accel: 180,
+      braking: 215,
       reverseAccel: 90,
       drag: 0.42,
-      turnRate: 4.6,
-      grip: 0.12,
+      turnRate: 4.2,
+      grip: 0.145,
       handbrakeGrip: 0.016,
     },
     cost: 500,
     look: "buggy",
     enginePitch: 1.3,
+    mass: 0.8,
   },
   {
     id: "brawler",
     name: "1/8 Brawler",
     classLabel: "1/8",
     blurb:
-      "Heavy, grippy and brutal: huge cornering power and big brakes, but a lower top end.",
+      "Heavy, grippy and brutal: huge cornering grip and big brakes, and it shoves lighter cars aside.",
     base: {
       maxSpeed: 205,
-      accel: 165,
+      accel: 175,
       braking: 320,
       reverseAccel: 80,
       drag: 0.4,
@@ -79,6 +83,7 @@ export const carClasses: CarClass[] = [
     cost: 1200,
     look: "brawler",
     enginePitch: 0.78,
+    mass: 1.4,
   },
 ];
 

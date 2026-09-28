@@ -20,10 +20,11 @@ import {
 } from "../core/Input.ts";
 import {
   createArena,
-  stepCar,
   forwardSpeed,
+  stepField,
   type Arena,
   type ArenaCar,
+  type FieldStep,
 } from "../physics/MatterCar.ts";
 import { currentLapTimeMs, formatLap, RaceState } from "../race/RaceState.ts";
 import { makeDriver } from "../race/AiDriver.ts";
@@ -38,7 +39,7 @@ import {
   freshBase,
   type CarClass,
 } from "./cars.ts";
-import { Progression } from "./progression.ts";
+import { CLEAR_POSITION, Progression } from "./progression.ts";
 import { rivalCarFor, rivalField, rivalLabel } from "./rivals.ts";
 import {
   UPGRADE_TREE,
@@ -65,8 +66,15 @@ import { ReplayRecorder, type CarPose } from "../race/Replay.ts";
 import { ReplayPlayer } from "../race/ReplayPlayer.ts";
 import { buildSplits, ghostTimeAt, type Splits } from "../race/Split.ts";
 import {
+  CALLOUT_MS,
+  lapCallout,
+  WrongWay,
+  type Callout,
+} from "../race/Callouts.ts";
+import {
   CAR_LENGTH,
   CAR_WIDTH,
+  CAMERA_FRAME_PX,
   CAMERA_LERP_RATE,
   CAMERA_LOOKAHEAD,
   CAMERA_ZOOM_FAST,
@@ -94,6 +102,7 @@ import {
   type TrackRow,
   type UpgradeRow,
   type ResultsView,
+  type StandingRow,
 } from "../ui/ui.ts";
 import type { Vec2 } from "../core/vec.ts";
 import { MenuNav } from "../ui/MenuNav.ts";
@@ -117,19 +126,28 @@ interface BodyState {
   angle: number;
 }
 
-/** A rival: its body + the race/driver/prev-frame state the autopilot feeds it. */
+/** A rival: its body + the race and driver state the autopilot feeds it. */
 interface Racer {
   car: ArenaCar;
   race: RaceState;
-  driver: (d: BodyState) => InputState;
-  prev: Vec2;
+  driver: (d: BodyState, traffic: readonly BodyState[]) => InputState;
+  /** Every other car on the road, for the autopilot to race around. */
+  traffic: BodyState[];
   /** Last input the autopilot gave, for the rival's wheels + brake lights. */
   input: InputState;
 }
 
-/** Camera zoom multiplier for a `w` x `h` css-px viewport (see `viewScale`). */
+/** Slowest knock (px/s into a wall or car) worth a sound… */
+const KNOCK_MIN_SPEED = 30;
+/** …and the least time between two (race ms), so a scrape isn't a drumroll. */
+const KNOCK_GAP_MS = 140;
+
+/**
+ * Camera zoom multiplier for a `w` x `h` css-px viewport (see `viewScale`):
+ * the short side over `CAMERA_FRAME_PX`, within [0.5, 3].
+ */
 export function viewScaleFor(w: number, h: number): number {
-  return Math.max(0.5, Math.min(1, Math.min(w, h) / 600));
+  return Math.max(0.5, Math.min(3, Math.min(w, h) / CAMERA_FRAME_PX));
 }
 
 export interface GameDeps {
@@ -176,9 +194,10 @@ export class Game {
   /** Pixel density the canvas was last sized for (0 = not yet). */
   private dpr = 0;
   /**
-   * Zoom multiplier for small screens (phones): below 600 css px on the short
-   * side the camera pulls out, so as much track is visible as on a laptop.
-   * 1 on anything bigger, leaving the tuned desktop framing alone.
+   * Zoom multiplier for the screen: the camera's zooms are tuned for a short
+   * side of `CAMERA_FRAME_PX`, and scale with it, so every screen frames the
+   * same stretch of track. A phone pulls out; a big monitor closes in rather
+   * than showing the whole circuit around a speck of a car.
    */
   private viewScale = 1;
   /** The player's input on the last step, for the car's wheels + lights. */
@@ -209,6 +228,8 @@ export class Game {
   private skid: SkidState;
   private audio: IAudio;
   private prevLap = 0;
+  /** Race clock (ms) of the last knock played (see `playImpacts`). */
+  private lastKnockMs = -Infinity;
   /** The saved best-lap ghost for the current track (empty if none yet). */
   private ghost: Ghost = [];
   /** `splits` indexes this ghost by distance; rebuilt when the chase changes. */
@@ -219,6 +240,11 @@ export class Game {
    * clock, not the race clock: the sim (and its clock) stops at the finish.
    */
   private confettiStartFrameMs: number | null = null;
+  /** The lap news across the middle of the screen (see `lapCallout`). */
+  private callout: Callout | null = null;
+  /** Heading the wrong way round, and what notices it. */
+  private wrongWay = false;
+  private wrongWayTracker = new WrongWay();
   private settings: Settings;
   /** The action awaiting a key capture, or null when not rebinding. */
   private rebinding: KeyAction | null = null;
@@ -544,26 +570,34 @@ export class Game {
       track,
       this.currentStats(),
       rivalField(track.def, this.rivals),
+      { mass: carById(this.prog.selectedCarId)?.mass },
     );
     this.ghost = this.prog.ghostFor(track.def.id);
     this.playerRace = new RaceState(this.arena.track, () => this.clockMs);
-    this.racers = [];
-    for (const c of this.arena.cars) {
-      if (c.isPlayer || c.pace === undefined) continue;
-      this.racers.push({
-        car: c,
-        race: new RaceState(this.arena.track, () => this.clockMs),
-        driver: makeDriver(track, { pace: c.pace, lookahead: 0.05 }),
-        prev: { x: c.body.position.x, y: c.body.position.y },
-        input: neutralInput(),
-      });
-    }
+    // One racer per rival, in the arena's order (the player is cars[0]).
+    const cars = this.arena.cars;
+    this.racers = cars.slice(1).map((c) => ({
+      car: c,
+      race: new RaceState(this.arena.track, () => this.clockMs),
+      driver: makeDriver(track, {
+        pace: c.pace ?? 0.8,
+        lookahead: 0.05,
+        lane: c.lane,
+        car: c.stats,
+      }),
+      traffic: cars.filter((o) => o !== c).map((o) => o.body),
+      input: neutralInput(),
+    }));
     this.finished = false;
     this.paused = false;
     this.lastResults = null;
     this.skid = createSkid();
     this.lastInput = neutralInput();
     this.prevLap = 0;
+    this.lastKnockMs = -Infinity;
+    this.callout = null;
+    this.wrongWay = false;
+    this.wrongWayTracker = new WrongWay();
     this.recorder = new ReplayRecorder();
     this.recorder.record(0, this.poses());
     // The field waits on the grid for the lights; the first beep is "3".
@@ -672,16 +706,28 @@ export class Game {
     }
     this.clockMs += dt * 1000;
 
-    // Player.
-    const p = this.arena.cars[0]!;
-    // Capture the pre-step pose so the gate test sees this tick's
-    // (prev -> cur) segment. Feeding the *previous* stored pose (the old
-    // prevMap) frozen the segment at [grid, now] forever, so no real
-    // start/finish crossing ever registered.
-    const prevP: Vec2 = { x: p.body.position.x, y: p.body.position.y };
+    // The whole field moves at once, then contact settles between the cars.
+    // Each car's pre-step pose is captured so its gate test sees this tick's
+    // (prev -> cur) segment. (Feeding a stored older pose froze the segment
+    // at [grid, now] forever, so no real start/finish crossing registered.)
+    const cars = this.arena.cars;
+    const p = cars[0]!;
+    const prev: Vec2[] = cars.map((c) => ({
+      x: c.body.position.x,
+      y: c.body.position.y,
+    }));
     this.lastInput = this.input.sample();
-    this.stepBody(p, this.lastInput, dt);
-    this.playerRace.update(prevP, p.body.position, p.body.angle);
+    for (const r of this.racers) r.input = r.driver(r.car.body, r.traffic);
+    const hits = stepField(
+      this.arena,
+      [this.lastInput, ...this.racers.map((r) => r.input)],
+      dt,
+    );
+    this.playerRace.update(prev[0], p.body.position, p.body.angle);
+    this.racers.forEach((r, i) =>
+      r.race.update(prev[i + 1], r.car.body.position),
+    );
+    this.playImpacts(hits);
 
     // Tire-smoke trail: lay skids while the player slides, fade them over time.
     sampleDrift(this.skid, p.body, {
@@ -691,18 +737,6 @@ export class Game {
     });
     ageMarks(this.skid, dt);
 
-    // Rivals.
-    for (const r of this.racers) {
-      const inp = r.driver({
-        position: r.car.body.position,
-        velocity: r.car.body.velocity,
-        angle: r.car.body.angle,
-      });
-      r.input = inp;
-      this.stepBody(r.car, inp, dt);
-      r.race.update(r.prev, r.car.body.position);
-      r.prev = { x: r.car.body.position.x, y: r.car.body.position.y };
-    }
     if (this.recorder.due(this.clockMs))
       this.recorder.record(this.clockMs, this.poses());
 
@@ -713,7 +747,20 @@ export class Game {
       // The final lap gets the finish chime instead (not both at once).
       if (!this.playerRace.finished) this.audio.play("lap");
       this.prevLap = this.playerRace.lap;
+      this.callout =
+        lapCallout(
+          this.playerRace,
+          this.arena.track.laps,
+          this.prog.bestLap(this.currentTrack().id),
+          this.clockMs,
+        ) ?? this.callout;
     }
+    this.wrongWay = this.wrongWayTracker.update(
+      this.playerRace.arcOf(p.body.position),
+      this.playerRace.lapLength,
+      dt * 1000,
+      forwardSpeed(p.body),
+    );
     if (this.playerRace.finished) this.finalizeRace();
   }
 
@@ -734,8 +781,27 @@ export class Game {
       this.audio.play("count");
   }
 
-  private stepBody(c: ArenaCar, input: InputState, dtS: number): void {
-    stepCar(c.body, this.arena.walls, this.arena.track, input, c.stats, dtS);
+  /**
+   * A knock for the player's own contacts — a wall, or another car — louder
+   * the harder the hit. Rivals knocking each other stay quiet, and scraping
+   * along a wall doesn't re-trigger it every step.
+   */
+  private playImpacts(hits: FieldStep): void {
+    const wall = hits.walls[0] ?? 0;
+    let car = 0;
+    for (const c of hits.contacts)
+      if (c.a === 0 || c.b === 0) car = Math.max(car, c.speed);
+    const speed = Math.max(wall, car);
+    if (
+      speed < KNOCK_MIN_SPEED ||
+      this.clockMs - this.lastKnockMs < KNOCK_GAP_MS
+    )
+      return;
+    this.lastKnockMs = this.clockMs;
+    this.audio.play(
+      car >= wall ? "bump" : "hit",
+      Math.min(0.45, 0.08 + speed / 500),
+    );
   }
 
   private followCamera(dt: number): void {
@@ -764,8 +830,10 @@ export class Game {
     this.recorder.record(this.clockMs, this.poses()); // the flag itself
     this.replays.load(this.recorder.finish());
     this.audio.play("finish");
-    this.confettiStartFrameMs = this.lastFrameMs;
     const position = this.playerPosition();
+    // Confetti for a podium: the finish that counts.
+    this.confettiStartFrameMs =
+      position <= CLEAR_POSITION ? this.lastFrameMs : null;
     const outcome = this.prog.recordRace({
       trackId: this.currentTrack().id,
       carId: this.prog.selectedCarId,
@@ -781,7 +849,10 @@ export class Game {
     this.ghost = this.prog.ghostFor(this.currentTrack().id);
     const i = this.trackDefs.findIndex((t) => t.id === this.currentTrack().id);
     const next = this.trackDefs[i + 1];
+    const nextOpen = next !== undefined && this.prog.isTrackUnlocked(i + 1);
     this.lastResults = {
+      standings: this.standings(),
+      lockedNext: next !== undefined && !nextOpen ? next.name : undefined,
       position,
       total: this.arena.cars.length,
       bestLapMs: this.playerRace.bestLapMs,
@@ -791,15 +862,45 @@ export class Game {
         outcome.unlockedCar === null
           ? undefined
           : (carById(outcome.unlockedCar)?.name ?? outcome.unlockedCar),
-      nextTrack:
-        next !== undefined && this.prog.isTrackUnlocked(i + 1)
-          ? { id: next.id, name: next.name }
-          : undefined,
+      nextTrack: nextOpen ? { id: next.id, name: next.name } : undefined,
       canReplay: this.replays.ready,
       trackName: this.currentTrack().name,
     };
     this.save();
     this.showResults();
+  }
+
+  /**
+   * The finishing order at the player's flag, with each car's gap to the
+   * winner. A rival already home has its finish time; one still out on the
+   * track is timed home at its average speed so far (at the flag, a few
+   * tenths either way), so the order matches the position the HUD read.
+   */
+  private standings(): StandingRow[] {
+    const now = this.clockMs;
+    const total = this.playerRace.lapLength * this.arena.track.laps;
+    const timed = this.arena.cars.map((c, i) => {
+      const race = i === 0 ? this.playerRace : this.racers[i - 1].race;
+      let ms = race.finishMs;
+      if (!race.finished) {
+        const done = race.progress(c.body.position);
+        ms = done > 0 ? now + ((total - done) * now) / done : Infinity;
+      }
+      return { name: i === 0 ? "You" : c.label, you: i === 0, ms };
+    });
+    timed.sort((a, b) => a.ms - b.ms || (a.you ? -1 : b.you ? 1 : 0));
+    const winner = timed[0].ms;
+    return timed.map((t, k) => ({
+      place: k + 1,
+      name: t.name,
+      you: t.you,
+      time:
+        k === 0
+          ? formatLap(t.ms)
+          : isFinite(t.ms)
+            ? `+${((t.ms - winner) / 1000).toFixed(2)}s`
+            : "–",
+    }));
   }
 
   /** Every car's pose right now, player first, as the replay records it. */
@@ -895,7 +996,7 @@ export class Game {
         this.confettiStartFrameMs === null
           ? undefined
           : this.lastFrameMs - this.confettiStartFrameMs,
-      fps: this.fps,
+      fps: this.settings.showFps ? this.fps : undefined,
       look: this.carLook(),
       rivalLook: rivalCarFor(this.arena.track.def).look,
       controls: replaying
@@ -912,6 +1013,8 @@ export class Game {
       hud: this.screen === "race" || this.screen === "results",
       startClockMs: this.startClock(),
       replay: replaying ? this.replays.badge() : undefined,
+      artZoom: CAMERA_ZOOM_SLOW * this.viewScale,
+      ...this.raceNews(),
       ...this.chaseView(),
     };
     this.renderer.render(scene);
@@ -941,6 +1044,23 @@ export class Game {
       ),
     );
     this.audio.setSkid?.(slipAmount(p.body, { maxSpeed: top }));
+  }
+
+  /**
+   * The race's callouts for the HUD: the latest lap news while it's fresh,
+   * and the wrong-way warning — racing only, not over the results.
+   */
+  private raceNews(): Pick<RenderScene, "callout" | "wrongWay"> {
+    if (this.screen !== "race" || this.finished) return {};
+    const c = this.callout;
+    const age = c === null ? Infinity : this.clockMs - c.atMs;
+    return {
+      callout:
+        c !== null && age < CALLOUT_MS
+          ? { title: c.title, detail: c.detail, tone: c.tone, ageMs: age }
+          : undefined,
+      wrongWay: this.wrongWay || undefined,
+    };
   }
 
   /**
@@ -1036,6 +1156,11 @@ export class Game {
       this.commitSettings({
         ...this.settings,
         colorMode: toggleColorMode(this.settings.colorMode),
+      });
+    else if (action === "toggle-fps")
+      this.commitSettings({
+        ...this.settings,
+        showFps: !this.settings.showFps,
       });
     else if (action === "cycle-hud")
       this.commitSettings({
@@ -1147,7 +1272,9 @@ export class Game {
       difficulty: t.difficulty,
       rivals: rivalLabel(t),
       lockHint:
-        i > 0 ? `Clear ${this.trackDefs[i - 1].name} to unlock` : undefined,
+        i > 0
+          ? `Finish top 3 at ${this.trackDefs[i - 1].name} to unlock`
+          : undefined,
       tags: conditionTags(conditionsOf(t)),
       outline: outlineOf(t, THUMB_W, THUMB_H),
     }));
@@ -1205,6 +1332,7 @@ export class Game {
       colorMode: this.settings.colorMode,
       hudSize: this.settings.hudSize,
       muted: this.settings.muted,
+      showFps: this.settings.showFps,
       bindings: KEY_ACTIONS.map((a) => ({
         action: a,
         label: ACTION_LABELS[a],

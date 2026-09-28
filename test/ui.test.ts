@@ -83,6 +83,7 @@ const BASE_OUTCOME = {
   oldBest: 4000,
   newBest: 4000,
   unlockedCar: null,
+  cleared: true,
   unlockedTrack: null,
   boardRank: null,
 } as const;
@@ -111,10 +112,42 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
     expect(html).toMatch(/data-action="menu"/);
   });
 
+  it("garage races the selected track straight from the garage", () => {
+    const html = garageHtml(model());
+    // The screen's main action, so a pad's Start presses it too.
+    expect(html).toMatch(
+      /<button class="primary garage-race" data-action="start">▶ Race<span class="garage-race-track"> · Overture<\/span><\/button>/,
+    );
+  });
+
   it("results offer race-again + garage", () => {
     const html = resultsHtml(resultsView());
     expect(html).toContain('data-action="raceagain"');
     expect(html).toContain('data-action="garage"');
+  });
+
+  it("results list the finishing order, your line marked", () => {
+    const html = resultsHtml({
+      ...resultsView(),
+      standings: [
+        { place: 1, name: "Mako", you: false, time: "0:52.310" },
+        { place: 2, name: "You", you: true, time: "+0.84s" },
+        { place: 3, name: "Vex", you: false, time: "+2.10s" },
+      ],
+    });
+    expect(html).toContain('<ol class="standings">');
+    expect(html).toMatch(
+      /<li class="you"><span>2<\/span><b>You<\/b><i>\+0\.84s<\/i>/,
+    );
+    expect(html).toContain("<b>Mako</b><i>0:52.310</i>");
+  });
+
+  it("off the podium, with the next track shut, the results say what opens it", () => {
+    const shut = { ...resultsView(), lockedNext: "Hairpin" };
+    expect(
+      resultsHtml({ ...shut, outcome: { ...shut.outcome, cleared: false } }),
+    ).toContain("Finish in the top 3 to unlock Hairpin");
+    expect(resultsHtml(shut)).not.toContain("to unlock Hairpin");
   });
 
   it("race overlay offers a clickable quit control (regression: had no way to quit)", () => {
@@ -144,6 +177,7 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
     const view = {
       colorMode: "std" as const,
       hudSize: "md" as const,
+      showFps: false,
       bindings: [],
       rebinding: false,
       rebindingAction: null,
@@ -233,6 +267,7 @@ describe("Overlay HTML carries the right controls (pure, no DOM)", () => {
       colorMode: "std",
       hudSize: "md",
       muted: false,
+      showFps: false,
       bindings: [{ action: "handbrake", label: "Handbrake", keys: ["Space"] }],
       rebinding: true,
       rebindingAction: "handbrake",
@@ -301,10 +336,10 @@ describe("Menu, garage and results guide the next step", () => {
       selected: false,
       unlocked: false,
       vibe: "Tight & quick",
-      lockHint: "Clear Overture to unlock",
+      lockHint: "Finish top 3 at Overture to unlock",
     });
     const html = menuHtml(m);
-    expect(html).toContain("🔒 Clear Overture to unlock");
+    expect(html).toContain("🔒 Finish top 3 at Overture to unlock");
     expect(html).not.toContain("Tight &amp; quick");
     expect(html).toMatch(/data-selecttrack="hairpin" disabled/);
   });

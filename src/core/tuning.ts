@@ -17,6 +17,12 @@ export const CAMERA_ZOOM_FAST = 0.55;
 export const CAMERA_ZOOM_RATE = 2; // 1/s exponential smoothing
 /** Wide shot for the menus' live backdrop. */
 export const CAMERA_ZOOM_MENU = 0.55;
+/**
+ * The zooms above frame a screen whose short side is this many css px. Other
+ * screens scale them by their short side over this (see `viewScaleFor`), so
+ * a phone and a big monitor show the same stretch of track.
+ */
+export const CAMERA_FRAME_PX = 600;
 
 // Race start: a 3-2-1 countdown holds the whole field on the grid, then GO.
 export const START_COUNTDOWN_MS = 3000;
@@ -32,6 +38,22 @@ export const GATE_TOLERANCE = 6; // px tolerance for gate crossing
 // the into-wall speed. So a graze costs a little and a head-on hit a lot.
 export const WALL_BOUNCE = 0.3;
 export const WALL_FRICTION = 0.5;
+
+// Car-to-car contact. Each car is a capsule as wide as its body; two that
+// touch are pushed apart (the lighter one further) and trade an impulse along
+// the contact: CAR_BOUNCE of the closing speed comes back, and rubbing side by
+// side costs each a little speed (CAR_FRICTION of the impulse).
+export const CAR_BOUNCE = 0.35;
+export const CAR_FRICTION = 0.15;
+
+/**
+ * How hard the tyres can pull a car sideways, per unit of `grip` (px/s²): the
+ * cornering limit. A car turning harder than GRIP_ACCEL × grip at speed slides
+ * wide, so a tight corner needs braking for, and grip (tyres, aero, the
+ * conditions) sets how fast every bend can be taken. The sedan's 0.18 grip
+ * takes a 200 px bend flat out at its top speed, and tighter ones slower.
+ */
+export const GRIP_ACCEL = 900;
 
 /**
  * Drivability of a single car. Phase 1 hardcodes `defaultCarStats`. Phase 2

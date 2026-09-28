@@ -1,6 +1,7 @@
 import type Matter from "matter-js";
 import type { Camera } from "./Camera.ts";
 import type { CarControls, IRenderer, RenderScene } from "./types.ts";
+import { CALLOUT_MS } from "../race/Callouts.ts";
 import type { BuiltTrack } from "../track/Track.ts";
 import type { RaceState } from "../race/RaceState.ts";
 import type { SkidMark } from "./SkidMarks.ts";
@@ -43,8 +44,14 @@ import {
 
 /** World px of margin around the track art for scenery + shadows. */
 const ART_MARGIN = 220;
-/** Cap on the cached track art's size, in canvas pixels (~36 MB RGBA). */
-const ART_MAX_PIXELS = 9_000_000;
+/**
+ * Cap on the cached track art's size, in canvas pixels (~64 MB RGBA): just
+ * under Safari's 16.7M-pixel limit on a single canvas. Only a close camera on
+ * a high-density screen asks for this much.
+ */
+const ART_MAX_PIXELS = 16_000_000;
+/** Most canvas pixels per world px the art is ever painted at. */
+const ART_MAX_SCALE = 3;
 /** Ground texture tile size (world px). */
 const GROUND_TILE = 256;
 /** A night light map's resolution, relative to the art (light is soft). */
@@ -147,7 +154,7 @@ export class Canvas2DRenderer implements IRenderer {
     const night = cond.lighting === "night";
     const bodies = [car, ...(rivals ?? [])];
 
-    const art = this.trackArt(track, camera);
+    const art = this.trackArt(track, camera, scene.artZoom ?? CAMERA_ZOOM_SLOW);
     this.drawGround(track, camera, w, h, art);
     this.drawTrackArt(art, camera);
     this.drawSkidMarks(skidMarks, camera, cond);
@@ -171,6 +178,8 @@ export class Canvas2DRenderer implements IRenderer {
     if (cond.weather === "rain") this.drawRain(w, h, timeMs);
     this.drawVignette(w, h, night ? 0.62 : 0.4);
     if (hud) this.drawHUD(scene, w, h);
+    if (scene.callout !== undefined) this.drawCallout(w, h, scene.callout);
+    if (scene.wrongWay) this.drawWrongWay(w, h, timeMs);
     if (confettiAgeMs !== undefined && confettiAgeMs >= 0) {
       this.drawConfetti(this.ctx, w, h, confettiAgeMs);
     }
@@ -279,18 +288,25 @@ export class Canvas2DRenderer implements IRenderer {
   /**
    * The pre-painted track (ground included). It is painted once per track,
    * at about one canvas pixel per device pixel for the *closest* zoom the
-   * camera reaches, so the per-frame speed zoom never triggers a repaint. It
-   * only repaints for a new track or when it needs more resolution (e.g. a
-   * sharper screen).
+   * camera reaches (`closest`), so the per-frame speed zoom never triggers a
+   * repaint. It only repaints for a new track or when it needs more
+   * resolution (e.g. a sharper screen).
    */
-  private trackArt(track: BuiltTrack, cam: Camera): TrackArt | null {
+  private trackArt(
+    track: BuiltTrack,
+    cam: Camera,
+    closest: number,
+  ): TrackArt | null {
     const b = track.bounds;
     const worldW = b.maxX - b.minX + ART_MARGIN * 2;
     const worldH = b.maxY - b.minY + ART_MARGIN * 2;
-    const cap = Math.min(1.5, Math.sqrt(ART_MAX_PIXELS / (worldW * worldH)));
+    const cap = Math.min(
+      ART_MAX_SCALE,
+      Math.sqrt(ART_MAX_PIXELS / (worldW * worldH)),
+    );
     const want = Math.min(
       cap,
-      Math.max(0.5, Math.max(cam.zoom, CAMERA_ZOOM_SLOW) * this.dpr),
+      Math.max(0.5, Math.max(cam.zoom, closest) * this.dpr),
     );
     const id = `${track.def.id}|${track.width}`;
     if (
@@ -1015,6 +1031,78 @@ export class Canvas2DRenderer implements IRenderer {
     ctx.strokeText(text, cx, ty);
     ctx.fillStyle = go ? "#7dff9b" : "#ffe9a8";
     ctx.fillText(text, cx, ty);
+    ctx.restore();
+  }
+
+  /**
+   * Lap news across the upper middle of the screen: the title bursts in and
+   * settles, the line under it gives the lap time, and the pair fades out
+   * over the callout's last half second. Coloured by the news (a record,
+   * a best, the final lap), which the words say too.
+   */
+  private drawCallout(
+    w: number,
+    h: number,
+    c: NonNullable<RenderScene["callout"]>,
+  ): void {
+    const { ctx } = this;
+    const s = this.hudScale;
+    const t = c.ageMs;
+    const fade = Math.min(1, t / 150, (CALLOUT_MS - t) / 500);
+    if (fade <= 0) return;
+    const pop = 1 + 0.3 * Math.pow(Math.max(0, 1 - t / 300), 3);
+    const tone = splitColors(this.colorMode);
+    const color = {
+      record: "#ffe9a8",
+      best: tone.ahead,
+      final: "#ffcf7a",
+      lap: "#ffffff",
+    }[c.tone];
+    const cx = w / 2;
+    const cy = h * 0.3;
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.font = `800 ${40 * s * pop}px system-ui, sans-serif`;
+    ctx.lineWidth = 6 * s;
+    ctx.strokeText(c.title, cx, cy);
+    ctx.fillStyle = color;
+    ctx.fillText(c.title, cx, cy);
+    if (c.detail !== undefined) {
+      ctx.font = `600 ${20 * s}px system-ui, sans-serif`;
+      ctx.lineWidth = 4 * s;
+      ctx.strokeText(c.detail, cx, cy + 36 * s);
+      ctx.fillStyle = "#fff";
+      ctx.fillText(c.detail, cx, cy + 36 * s);
+    }
+    ctx.restore();
+  }
+
+  /** "WRONG WAY", pulsing, above the middle of the screen. */
+  private drawWrongWay(w: number, h: number, timeMs: number): void {
+    const { ctx } = this;
+    const s = this.hudScale;
+    const cx = w / 2;
+    const cy = h * 0.2;
+    ctx.save();
+    ctx.globalAlpha = 0.65 + 0.35 * Math.sin(timeMs / 110);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.font = `800 ${34 * s}px system-ui, sans-serif`;
+    ctx.lineWidth = 6 * s;
+    ctx.strokeStyle = "rgba(0,0,0,0.65)";
+    ctx.strokeText("WRONG WAY", cx, cy);
+    ctx.fillStyle = splitColors(this.colorMode).behind;
+    ctx.fillText("WRONG WAY", cx, cy);
+    ctx.font = `600 ${16 * s}px system-ui, sans-serif`;
+    ctx.lineWidth = 4 * s;
+    ctx.strokeText("Turn around", cx, cy + 28 * s);
+    ctx.fillStyle = "#fff";
+    ctx.fillText("Turn around", cx, cy + 28 * s);
     ctx.restore();
   }
 

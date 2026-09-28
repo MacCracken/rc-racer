@@ -196,6 +196,12 @@ describe("settings migration", () => {
     ).toBe(true);
   });
 
+  it("shows no frame rate unless asked, and keeps the choice", () => {
+    expect(defaultSettings().showFps).toBe(false);
+    expect(migrateSettings({ showFps: true }).showFps).toBe(true);
+    expect(migrateSettings({ showFps: "yes" }).showFps).toBe(false);
+  });
+
   it("migrateSettings handles null/non-object without throwing", () => {
     expect(migrateSettings(null)).toEqual(defaultSettings());
     expect(migrateSettings("garbage")).toEqual(defaultSettings());

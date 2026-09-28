@@ -14,8 +14,10 @@ export interface RewardInput {
 
 export const REWARD_MIN = 0;
 const REWARD_MAX = 320;
-const BASE = 60;
-const PER_LAP = 8;
+/** Paid for finishing a race… */
+export const FINISH_PAY = 75;
+/** …and for each lap of it. */
+export const LAP_PAY = 10;
 
 export function computeReward(inp: RewardInput): number {
   const { base, pace } = rewardParts(inp);
@@ -28,7 +30,7 @@ export function computeReward(inp: RewardInput): number {
  * par).
  */
 export function rewardParts(inp: RewardInput): { base: number; pace: number } {
-  const base = BASE + inp.lapsCompleted * PER_LAP;
+  const base = FINISH_PAY + inp.lapsCompleted * LAP_PAY;
   if (inp.bestLapMs <= 0 || !isFinite(inp.bestLapMs) || inp.parLapMs <= 0) {
     return { base, pace: 0 };
   }
@@ -44,7 +46,7 @@ export function rewardParts(inp: RewardInput): { base: number; pace: number } {
  * reason to race the rivals, not just the clock. Nothing off the podium, and
  * nothing when racing alone.
  */
-export const PODIUM_BONUS: readonly number[] = [40, 20, 10];
+export const PODIUM_BONUS: readonly number[] = [60, 35, 20];
 
 export function podiumBonus(position: number, fieldSize: number): number {
   if (fieldSize < 2 || !Number.isInteger(position) || position < 1) return 0;

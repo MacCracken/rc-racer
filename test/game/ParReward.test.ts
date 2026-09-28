@@ -7,7 +7,7 @@ import { makeDriver } from "../../src/race/AiDriver.ts";
 import { FIXED_DT } from "../../src/core/tuning.ts";
 import { applyBuild, freshUpgrades } from "../../src/game/upgrades.ts";
 import { carClasses } from "../../src/game/cars.ts";
-import { computeReward } from "../../src/game/economy.ts";
+import { computeReward, FINISH_PAY, LAP_PAY } from "../../src/game/economy.ts";
 
 /**
  * The Phase 4 tuning check for the economy: a *faster* best lap must actually
@@ -57,7 +57,7 @@ describe("economy: the par bonus", () => {
   it("a sub-par best lap earns a bonus above the base payout", () => {
     const par = 4000;
     const laps = 3;
-    const base = 60 + laps * 8; // base payout, no performance bonus
+    const base = FINISH_PAY + laps * LAP_PAY; // base payout, no pace bonus
     const atPar = computeReward({
       parLapMs: par,
       bestLapMs: par,

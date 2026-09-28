@@ -30,11 +30,13 @@ Settings.
 | Restart / menu    | R / Q (or pause menu) | pause menu                           | pause menu                      |
 | Menus             | arrows, Enter, Esc    | d-pad or stick, A, B; Start = main   | tap                             |
 
-Races start on a 3-2-1 countdown. Credits pay for finishing, more for a
-podium, plus a bonus for a best lap under the track's par. After your first
-finish on a track, a ghost car replays your best lap and the timer shows a
-live split against it; after any race you can watch the whole thing back, and
-Records keeps your five best laps on every track.
+Races start on a 3-2-1 countdown, with you at the back of the grid and three
+rivals to get past; finish in the top 3 to unlock the next track. Tyres only
+grip so hard, so brake for the tight bends. Credits pay for finishing, more
+for a podium, plus a bonus for a best lap under the track's par. After your
+first finish on a track, a ghost car replays your best lap and the timer
+shows a live split against it; after any race you can watch the whole thing
+back, and Records keeps your five best laps on every track.
 
 Tracks come with conditions: dirt and rain cost the whole field grip (rain
 lengthens braking too), and at night you race by headlight.

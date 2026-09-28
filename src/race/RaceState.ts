@@ -7,6 +7,8 @@ import { GATE_SUBSTEPS, GATE_TOLERANCE } from "../core/tuning.ts";
 const SAMPLE_INTERVAL_MS = 1000 / 30;
 /** Per-step movement (px) below which the car still counts as parked. */
 const PARKED_EPS = 1e-6;
+/** How far past a gate along the road (px) a car counts as by it anyway. */
+const GATE_PAST = 30;
 
 /** Arc length (px) along the closed centerline of its closest point to `p`. */
 function arcPosition(cl: Vec2[], arc: number[], p: Vec2): number {
@@ -138,9 +140,26 @@ export class RaceState {
     const gate = this.track.gates[this.nextGate];
     if (gate === undefined) return;
 
-    if (this.checkGateCross(prev, cur, gate)) {
+    if (this.checkGateCross(prev, cur, gate) || this.pastGate(cur)) {
       this.onGateCrossed(gate.index);
     }
+  }
+
+  /**
+   * Is the car clearly past the next gate along the road, though its path
+   * never crossed the gate's line? Where a bend is tighter than half the
+   * road its inside edge folds over itself, and a car shoved along the apex
+   * can slip round the end of a gate there. It went by all the same; without
+   * this it would have to drive a whole extra lap to it. (The window is far
+   * too short for any way round the track but the road itself.)
+   */
+  private pastGate(cur: Vec2): boolean {
+    const L = this.lapLength;
+    let ds =
+      arcPosition(this.track.centerLine, this.arc, cur) -
+      this.gateArc[this.nextGate];
+    ds -= L * Math.round(ds / L);
+    return ds > GATE_PAST && ds < GATE_PAST * 8;
   }
 
   private checkGateCross(
@@ -215,6 +234,8 @@ export class RaceState {
   /**
    * Distance (px) into the current lap, 0 at the start line — `progress`
    * without the completed laps. Same gate-capping, so it can't jump ahead.
+   * Before the first gate of the race it goes negative behind the line, so
+   * the grid ranks front to back.
    */
   lapProgress(pos: Vec2): number {
     const G = this.gateArc.length;
@@ -225,7 +246,8 @@ export class RaceState {
     const to = last === G - 1 ? L : this.gateArc[last + 1];
     let ds = arcPosition(this.track.centerLine, this.arc, pos) - from;
     ds -= L * Math.round(ds / L); // wrap into [-L/2, L/2]
-    return from + Math.max(0, Math.min(to - from, ds));
+    const behind = this.lap === 0 && last === 0 ? -L / 2 : 0;
+    return from + Math.max(behind, Math.min(to - from, ds));
   }
 
   /** Raw arc position (px from the start line, 0..lapLength) nearest `p`. */

@@ -20,11 +20,17 @@ of these needs a person, a real device, or a decision.
 
 - [ ] **Feel-tuning pass.** Drive every car on every track; fix the corner that
       feels wrong, the upgrade that feels like nothing, the track that feels
-      unfair — and whether dirt, rain and night each feel right. Knobs:
-      `core/tuning.ts`, each car's stats in `game/cars.ts`, each track's
-      `aiPace` / `parLapMs` / `rivals` in `track/tracks.ts`, and the condition
+      unfair — and whether dirt, rain and night each feel right. The balance
+      has been set with the autopilot racing every field (it wins the warm-up
+      in a stock sedan, needs about 1300 cr of cars and parts to reach the
+      finale, and about 4000 to win it); a human drives differently. Knobs:
+      `core/tuning.ts` (`GRIP_ACCEL`, the cornering limit, is the big one;
+      `CAR_BOUNCE` / `CAR_FRICTION` for contact), each car's stats in
+      `game/cars.ts`, the upgrade tiers in `game/upgrades.ts`, each track's
+      `parLapMs` / `rivals` in `track/tracks.ts`, `FIELD_SPREAD` in
+      `game/rivals.ts`, the payouts in `game/economy.ts`, and the condition
       multipliers in `track/conditions.ts`. `npm run verify:tracks` runs the
-      autopilot everywhere.
+      autopilot everywhere, alone and against each field.
 - [ ] **60fps on a real low-end laptop.** Headless software-raster numbers are
       only a proxy (1080p holds 60, a 2× laptop panel ~35).
 - [ ] **A listen to the sound mix** — engine, squeal, chimes — and levels
@@ -71,7 +77,7 @@ if RC Racer crosses from "cool demo" to "product".
 | ------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
 | Car feel is wrong                                 | High   | Feel is numbers (`tuning.ts`, car stats), tuned by driving; "good enough by feel", not by formula. The feel-tuning pass is open. |
 | Low-end machines drop frames                      | Med    | Static art is pre-painted; per-frame fills are cut. Still needs a real-device check.                                             |
-| AI unfair or boring                               | Med    | Autopilot pace per track; the par test keeps every track's autopilot lap within [0.7×, 1.6×] of par. Ship legible, not perfect.  |
+| AI unfair or boring                               | Med    | Rivals brake for the grip they have, race side by side and pass; ladder tests race the real field. Ship legible, not perfect.    |
 | Scope creep on content                            | Med    | Content is data; Phase 5 is additive and never blocks the release.                                                               |
 | Renderer migration cost (Canvas2D → PixiJS/WebGL) | Low    | Renderer, input and save sit behind interfaces; a swap stays local to one module.                                                |
 

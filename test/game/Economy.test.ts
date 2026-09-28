@@ -10,6 +10,8 @@ import {
 } from "../../src/game/upgrades.ts";
 import {
   computeReward,
+  FINISH_PAY,
+  LAP_PAY,
   podiumBonus,
   rewardParts,
   PODIUM_BONUS,
@@ -159,7 +161,7 @@ describe("Economy", () => {
 
   it("rewards are finite for degenerate input", () => {
     expect(computeReward({ parLapMs: 0, bestLapMs: 0, lapsCompleted: 0 })).toBe(
-      60,
+      FINISH_PAY,
     );
     expect(
       Number.isFinite(
@@ -186,7 +188,7 @@ describe("Economy — podium bonus and the reward's parts", () => {
       const inp = { parLapMs: 4000, bestLapMs: best, lapsCompleted: 3 };
       const { base, pace } = rewardParts(inp);
       expect(base + pace).toBe(computeReward(inp));
-      expect(base).toBe(60 + 3 * 8);
+      expect(base).toBe(FINISH_PAY + 3 * LAP_PAY);
       if (!(best > 0 && best < 4000)) expect(pace).toBe(0);
       else expect(pace).toBeGreaterThan(0);
     }
@@ -205,7 +207,7 @@ describe("Upgrade preview — what a purchase does to the bars", () => {
     const after = withTier("engine", 1);
     const gains = statGains(sedan, after);
     expect(gains.map((g) => g.key)).toEqual(["maxSpeed", "accel"]);
-    expect(gains[0].text).toBe("+7 km/h"); // 108 -> 115 km/h on the speedo
+    expect(gains[0].text).toBe("+4 km/h"); // 108 -> 112 km/h on the speedo
     const read = (s: CarStats) =>
       Number(statBars(s).find((b) => b.key === "accel")!.text);
     expect(gains[1].text).toBe(`+${read(after) - read(sedan)}`);
@@ -214,8 +216,8 @@ describe("Upgrade preview — what a purchase does to the bars", () => {
 
   it("counts a longer slide (less handbrake grip) as a Drift gain", () => {
     const gains = statGains(sedan, withTier("drift", 1));
-    expect(gains.map((g) => g.label)).toEqual(["Drift"]);
-    expect(gains[0].text).toMatch(/^\+\d+$/);
+    expect(gains.map((g) => g.label)).toEqual(["Grip", "Drift"]);
+    for (const g of gains) expect(g.text).toMatch(/^\+\d+$/);
   });
 
   it("every tier visibly moves a bar, even on a car built up everywhere else", () => {

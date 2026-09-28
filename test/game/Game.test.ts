@@ -15,18 +15,21 @@ import type { IRenderer, RenderScene } from "../../src/core/types.ts";
 import {
   CAMERA_ZOOM_FAST,
   CAMERA_ZOOM_SLOW,
+  CAR_LENGTH,
   FIXED_DT,
 } from "../../src/core/tuning.ts";
 import { speedZoom, type Camera } from "../../src/core/Camera.ts";
 import { NullAudio } from "../../src/core/Audio.ts";
-import { freshUpgrades, SLOTS } from "../../src/game/upgrades.ts";
+import { freshUpgrades, SLOTS, UPGRADE_TREE } from "../../src/game/upgrades.ts";
+import { carById } from "../../src/game/cars.ts";
+import { overture } from "../../src/track/tracks.ts";
 import type { Ghost } from "../../src/race/Ghost.ts";
 import type { ResultsView, UiModel } from "../../src/ui/ui.ts";
 import { podiumBonus } from "../../src/game/economy.ts";
 import { GamepadInput, type PadLike } from "../../src/core/Gamepad.ts";
 import { viewScaleFor } from "../../src/game/Game.ts";
 import type { ReplayPlayer } from "../../src/race/ReplayPlayer.ts";
-import { currentLapTimeMs } from "../../src/race/RaceState.ts";
+import { currentLapTimeMs, formatLap } from "../../src/race/RaceState.ts";
 
 /**
  * Director-level regressions: the Game wiring (screen flow, clicks, clock,
@@ -232,7 +235,10 @@ describe("Game — rivals come from the track, not your garage", () => {
     rich.data.upgrades.brawler = maxed;
     const { g } = makeGame(0, rich);
     g.startRace();
-    expect(g.arena.cars[0].stats.maxSpeed).toBeGreaterThan(250); // really maxed
+    // Really maxed: well past the stock brawler.
+    expect(g.arena.cars[0].stats.maxSpeed).toBeGreaterThan(
+      carById("brawler")!.base.maxSpeed + 30,
+    );
     expect(rivalStats(rich)).toEqual(stock);
   });
 });
@@ -303,7 +309,8 @@ describe("Game — garage economy", () => {
     const { g, store } = makeGame(500);
     click(g, { "data-buy": "engine" });
     expect(store.load()?.upgrades["street-sedan"]?.engine).toBe(1);
-    expect(store.load()?.credits).toBe(380);
+    const engine = UPGRADE_TREE.find((u) => u.id === "engine")!;
+    expect(store.load()?.credits).toBe(500 - engine.tiers[0].cost);
   });
 });
 
@@ -319,14 +326,27 @@ describe("Game — key rebinding", () => {
 });
 
 describe("Game — render scene", () => {
-  it("confetti belongs to the finish: none carries into the next race", () => {
+  it("confetti belongs to a podium finish: none carries into the next race", () => {
     const { g, lastScene } = makeGame();
     g.startRace();
     autopilot(g);
     runToFinish(g);
+    expect(g.lastResults!.position).toBeLessThanOrEqual(3);
     g.renderScene();
     expect(lastScene()?.confettiAgeMs).toBe(0);
     g.startRace();
+    g.renderScene();
+    expect(lastScene()?.confettiAgeMs).toBeUndefined();
+  });
+
+  it("no confetti off the podium", () => {
+    const { g, lastScene } = makeGame();
+    g.startRace();
+    // Crawl round: the whole field gets home first.
+    const ai = makeDriver(g.arena.track, { pace: 0.1, lookahead: 0.05 });
+    drive(g, () => ({ ...ai(g.arena.cars[0]!.body), throttle: 0.35 }));
+    runToFinish(g, 400);
+    expect(g.lastResults!.position).toBe(4);
     g.renderScene();
     expect(lastScene()?.confettiAgeMs).toBeUndefined();
   });
@@ -338,6 +358,17 @@ describe("Game — render scene", () => {
     g.startRace();
     g.renderScene();
     expect(lastScene()?.hud).toBe(true);
+  });
+
+  it("puts the frame rate in the HUD only once Settings asks, and saves that", () => {
+    const { g, lastScene, store } = makeGame();
+    g.startRace();
+    g.renderScene();
+    expect(lastScene()?.fps).toBeUndefined();
+    click(g, { "data-action": "toggle-fps" });
+    g.renderScene();
+    expect(lastScene()?.fps).toBeTypeOf("number");
+    expect(store.load()?.settings.showFps).toBe(true);
   });
 });
 
@@ -542,6 +573,60 @@ describe("Game — chasing your best lap", () => {
   });
 });
 
+describe("Game — knocks", () => {
+  /** Pin the player against the start's outer wall, driving into it. */
+  function intoWall(g: GameInternals, speed: number): void {
+    const track = g.arena.track;
+    const n = track.gates[0].normal;
+    const p = g.arena.cars[0].body;
+    // Just inside where the wall pushes back (see `stepCar`).
+    const edge = track.width / 2 - CAR_LENGTH * 0.35 - 0.2;
+    p.position.x = track.start.pos.x + n.x * edge;
+    p.position.y = track.start.pos.y + n.y * edge;
+    p.velocity.x = n.x * speed;
+    p.velocity.y = n.y * speed;
+  }
+
+  it("a wall hit thuds, louder the harder, without a drumroll along it", () => {
+    const { g, audio } = makeGame();
+    g.startRace();
+    drive(g, neutralInput);
+    intoWall(g, 60);
+    g.onStep(FIXED_DT);
+    const soft = audio.log.filter((e) => e.ev === "hit");
+    expect(soft).toHaveLength(1);
+    // Pressed against it for a second: a knock now and then, not every step.
+    for (let i = 0; i < 1 / FIXED_DT; i++) {
+      intoWall(g, 200);
+      g.onStep(FIXED_DT);
+    }
+    const hits = audio.log.filter((e) => e.ev === "hit");
+    expect(hits.length).toBeGreaterThan(1);
+    expect(hits.length).toBeLessThan(10);
+    expect(hits[1].gain).toBeGreaterThan(soft[0].gain);
+  });
+
+  it("knocking a rival sounds; a crawl into a wall doesn't", () => {
+    const { g, audio } = makeGame();
+    g.startRace();
+    drive(g, neutralInput);
+    const me = g.arena.cars[0].body;
+    const them = g.arena.cars[1].body;
+    // Right up behind a rival, closing fast.
+    me.angle = them.angle;
+    me.position.x = them.position.x - Math.cos(them.angle) * 24;
+    me.position.y = them.position.y - Math.sin(them.angle) * 24;
+    me.velocity.x = Math.cos(them.angle) * 150;
+    me.velocity.y = Math.sin(them.angle) * 150;
+    g.onStep(FIXED_DT);
+    expect(audio.log.filter((e) => e.ev === "bump")).toHaveLength(1);
+    intoWall(g, 5);
+    audio.log.length = 0;
+    for (let i = 0; i < 0.5 / FIXED_DT; i++) g.onStep(FIXED_DT);
+    expect(audio.log.filter((e) => e.ev === "hit")).toEqual([]);
+  });
+});
+
 describe("Game — engine and tyre audio", () => {
   it("idles on the grid, revs with throttle, and goes quiet off the track", () => {
     const { g, audio } = makeGame(0, Progression.fresh(), {
@@ -652,7 +737,7 @@ describe("Game — the finish pays for position", () => {
     const { base, pace, podium } = r.outcome.breakdown;
     expect(r.outcome.creditsEarned).toBe(base + pace + podium);
     expect(prog.credits).toBe(r.outcome.creditsEarned);
-    expect(r.parMs).toBe(18000); // Overture's par, to explain the pace bonus
+    expect(r.parMs).toBe(overture.parLapMs); // to explain the pace bonus
   });
 });
 
@@ -953,12 +1038,70 @@ describe("Game — gamepad and small screens", () => {
     expect(g.paused).toBe(false);
   });
 
-  it("pulls the camera out on a phone, leaving desktop framing untouched", () => {
-    expect(viewScaleFor(1280, 720)).toBe(1);
-    expect(viewScaleFor(1024, 600)).toBe(1);
+  it("frames the same stretch of track on a phone, a laptop and a monitor", () => {
+    expect(viewScaleFor(1024, 600)).toBe(1); // the tuned framing
     expect(viewScaleFor(844, 390)).toBeCloseTo(0.65, 9); // landscape phone
     expect(viewScaleFor(390, 844)).toBeCloseTo(0.65, 9); // portrait
+    expect(viewScaleFor(1920, 1080)).toBeCloseTo(1.8, 9); // closes in
+    // So the world height on screen is the same: a car isn't a speck on a
+    // big monitor (it was, at a fixed zoom).
+    for (const [w, h] of [
+      [844, 390],
+      [1440, 900],
+      [2560, 1440],
+    ])
+      expect(h / viewScaleFor(w, h)).toBeCloseTo(600, 9);
     expect(viewScaleFor(200, 150)).toBe(0.5); // floor
+    expect(viewScaleFor(7680, 4320)).toBe(3); // ceiling
+  });
+});
+
+describe("Game — lap news", () => {
+  it("calls out each lap as it closes, over the race only", () => {
+    const { g, lastScene } = makeGame();
+    g.startRace();
+    autopilot(g);
+    while (g.playerRace.lap < 1) g.onStep(FIXED_DT);
+    g.renderScene();
+    const c = lastScene()!.callout!;
+    expect(c.title).toBe("LAP 2");
+    expect(c.detail).toContain(formatLap(g.playerRace.lastLapMs));
+    run(g, 3); // it fades
+    g.renderScene();
+    expect(lastScene()!.callout).toBeUndefined();
+  });
+
+  it("warns when the car heads the wrong way round", () => {
+    const { g, lastScene } = makeGame();
+    g.startRace();
+    const p = g.arena.cars[0].body;
+    p.angle += Math.PI; // spun round on the grid
+    drive(g, floorIt());
+    run(g, 0.4);
+    g.renderScene();
+    expect(lastScene()!.wrongWay).toBeUndefined();
+    run(g, 1);
+    g.renderScene();
+    expect(lastScene()!.wrongWay).toBe(true);
+  });
+});
+
+describe("Game — the finishing order", () => {
+  it("ranks the whole field, in the order the position read", () => {
+    const { g } = makeGame();
+    g.startRace();
+    autopilot(g);
+    runToFinish(g);
+    const r = g.lastResults!;
+    const rows = r.standings!;
+    expect(rows.map((x) => x.place)).toEqual([1, 2, 3, 4]);
+    expect(rows.filter((x) => x.you)).toHaveLength(1);
+    expect(rows.find((x) => x.you)!.place).toBe(r.position);
+    expect(rows.map((x) => x.name).sort()).toEqual(
+      ["Mako", "Rook", "Vex", "You"].sort(),
+    );
+    expect(rows[0].time).toMatch(/^\d:\d\d\.\d{3}$/);
+    for (const x of rows.slice(1)) expect(x.time).toMatch(/^\+\d+\.\d\ds$/);
   });
 });
 
@@ -1005,7 +1148,11 @@ describe("Game — the garage previews each upgrade", () => {
     }
     expect(rows.find((u) => u.slot === "engine")!.maxed).toBe(true);
     const tires = rows.find((u) => u.slot === "tires")!;
-    expect(tires.gains!.map((x) => x.key)).toEqual(["grip", "braking"]);
+    expect(tires.gains!.map((x) => x.key)).toEqual([
+      "accel",
+      "grip",
+      "braking",
+    ]);
   });
 
   it("the menu tags each track with its conditions", () => {
@@ -1019,11 +1166,11 @@ describe("Game — the garage previews each upgrade", () => {
     expect(tags.midnight).toEqual(["Night"]);
   });
 
-  it("locked tracks name the clear that opens them", () => {
+  it("locked tracks name the podium that opens them", () => {
     const { g } = makeGame();
     const tracks = g.uiModel().tracks;
     expect(tracks[0].unlocked).toBe(true);
     expect(tracks[1].unlocked).toBe(false);
-    expect(tracks[1].lockHint).toBe("Clear Overture to unlock");
+    expect(tracks[1].lockHint).toBe("Finish top 3 at Overture to unlock");
   });
 });

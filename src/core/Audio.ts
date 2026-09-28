@@ -15,7 +15,11 @@ export type SoundEvent =
   /** A start-countdown beep (3, 2, 1)… */
   | "count"
   /** …and the higher one as the lights go green. */
-  | "go";
+  | "go"
+  /** The player's car thumping a wall… */
+  | "hit"
+  /** …or knocking another car. */
+  | "bump";
 
 /** The engine voice's live state, as `engineFor` derives it from the car. */
 export interface EngineSound {
@@ -87,6 +91,8 @@ interface Loops {
 export class WebAudio implements IAudio {
   private ctx: AudioContext | null = null;
   private loops: Loops | null = null;
+  /** A quarter-second of white noise, for knocks (made on first use). */
+  private noise: AudioBuffer | null = null;
   private engineOn = false;
   private skidOn = false;
   private rainOn = false;
@@ -131,6 +137,14 @@ export class WebAudio implements IAudio {
     drift: 180,
     count: 523, // C5 ...
     go: 1047, // ... and C6, an octave up, like real start lights
+    hit: 85, // knocks: the body's thump under the crack (see `knock`)
+    bump: 170,
+  };
+
+  /** How bright a knock's crack is (low-pass Hz): a dull wall, a sharp car. */
+  private static CRACK: Partial<Record<SoundEvent, number>> = {
+    hit: 900,
+    bump: 2600,
   };
 
   play(ev: SoundEvent, gain = 0.25): void {
@@ -138,6 +152,11 @@ export class WebAudio implements IAudio {
     const ctx = this.ensure();
     if (ctx === null) return; // headless: nothing to play, but no error either
     try {
+      const crack = WebAudio.CRACK[ev];
+      if (crack !== undefined) {
+        this.knock(ctx, gain, crack, WebAudio.PITCH[ev]);
+        return;
+      }
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
       const t = ctx.currentTime;
@@ -152,6 +171,51 @@ export class WebAudio implements IAudio {
       // Browsers gate AudioContext behind a user gesture; a failed play is
       // a no-op, never a throw.
     }
+  }
+
+  /**
+   * A knock: a burst of noise through a low-pass (`crack` Hz) for the
+   * impact, over a sine falling an octave from `body` Hz for its weight.
+   */
+  private knock(
+    ctx: AudioContext,
+    gain: number,
+    crack: number,
+    body: number,
+  ): void {
+    const t = ctx.currentTime;
+    const level = Math.max(0.0002, Math.min(1, gain));
+    if (this.noise === null) {
+      const n = ctx.createBuffer(
+        1,
+        Math.ceil(ctx.sampleRate / 4),
+        ctx.sampleRate,
+      );
+      const s = n.getChannelData(0);
+      for (let i = 0; i < s.length; i++) s[i] = Math.random() * 2 - 1;
+      this.noise = n;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const tone = ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = crack;
+    const burst = ctx.createGain();
+    burst.gain.setValueAtTime(level, t);
+    burst.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    src.connect(tone).connect(burst).connect(ctx.destination);
+    src.start(t);
+    src.stop(t + 0.1);
+
+    const osc = ctx.createOscillator();
+    osc.frequency.setValueAtTime(body, t);
+    osc.frequency.exponentialRampToValueAtTime(body / 2, t + 0.12);
+    const thump = ctx.createGain();
+    thump.gain.setValueAtTime(level * 0.8, t);
+    thump.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+    osc.connect(thump).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.15);
   }
 
   setMuted(muted: boolean): void {

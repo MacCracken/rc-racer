@@ -39,7 +39,12 @@ function drive(def: TrackDef): { lapMs: number; slip: number } {
   const { body, stats } = arena.cars[0];
   let clock = 0;
   const race = new RaceState(track, () => clock);
-  const autopilot = makeDriver(track, { pace: 0.8, lookahead: 0.05 });
+  // Driving as the rivals do: braking for each bend by what its grip allows.
+  const autopilot = makeDriver(track, {
+    pace: 0.8,
+    lookahead: 0.05,
+    car: stats,
+  });
   let prev = { x: body.position.x, y: body.position.y };
   let slip = 0;
   let steps = 0;
@@ -121,11 +126,13 @@ describe("track conditions", () => {
     const slalom = tracks.find((t) => t.id === "slalom")!;
     const dry = drive(slalom);
     const wet = drive({ ...slalom, weather: "rain" });
-    expect(wet.slip).toBeGreaterThan(dry.slip * 2);
-    expect(wet.lapMs).toBeGreaterThan(dry.lapMs * 1.02);
+    // Braked for the wet, it still slides more, and the lower corner
+    // speeds cost real time.
+    expect(wet.slip).toBeGreaterThan(dry.slip * 1.25);
+    expect(wet.lapMs).toBeGreaterThan(dry.lapMs * 1.05);
     // And on Monsoon itself, rain costs time against the same track dry.
     const monsoonDry = drive({ ...monsoon, weather: undefined });
-    expect(drive(monsoon).lapMs).toBeGreaterThan(monsoonDry.lapMs * 1.01);
+    expect(drive(monsoon).lapMs).toBeGreaterThan(monsoonDry.lapMs * 1.05);
   });
 
   it("are spread through the ladder: dirt, rain and night each appear", () => {

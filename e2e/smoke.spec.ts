@@ -12,8 +12,11 @@ import {
   tapPad,
   PAD,
 } from "./fixtures.ts";
+import { UPGRADE_TREE } from "../src/game/upgrades.ts";
 
 const start = '[data-action="start"]';
+/** The balance after buying the first engine tier with 500 cr. */
+const afterEngine = `${500 - UPGRADE_TREE.find((u) => u.id === "engine")!.tiers[0].cost} cr`;
 
 test("first launch opens How to Play, then a menu with Start in view", async ({
   page,
@@ -80,11 +83,11 @@ test("garage: a purchase spends credits, shows at once, and survives a reload", 
   await page.locator('[data-action="garage"]').click();
   await expect(page.locator(".balance2")).toHaveText("500 cr");
   await page.locator('[data-buy="engine"]').click();
-  await expect(page.locator(".balance2")).toHaveText("380 cr");
+  await expect(page.locator(".balance2")).toHaveText(afterEngine);
   await expect(page.locator('[data-buy="engine"]')).toContainText("L1/4");
   await page.reload();
   await page.locator('[data-action="garage"]').click();
-  await expect(page.locator(".balance2")).toHaveText("380 cr");
+  await expect(page.locator(".balance2")).toHaveText(afterEngine);
 });
 
 test("settings: rebind a key by pressing it; reserved keys are refused", async ({
@@ -150,7 +153,7 @@ test("the menus work from the keyboard: arrows move, Enter picks, Esc backs out"
   // The garage opens on its first upgrade; buying it keeps the cursor there.
   await expect(page.locator('[data-buy="engine"]')).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.locator(".balance2")).toHaveText("380 cr");
+  await expect(page.locator(".balance2")).toHaveText(afterEngine);
   await expect(page.locator('[data-buy="engine"]')).toBeFocused();
   // Back on the menu, the cursor is where it was.
   await page.keyboard.press("Escape");

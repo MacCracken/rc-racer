@@ -79,6 +79,16 @@ export interface UiModel {
   keyMap: KeyMap;
 }
 
+/** A line of the finishing order. */
+export interface StandingRow {
+  place: number;
+  name: string;
+  /** The player's own line. */
+  you: boolean;
+  /** The winner's race time; everyone else's gap to it ("+1.42s"). */
+  time: string;
+}
+
 /** What the results panel renders: the economy outcome + the race's finish info. */
 export interface ResultsView {
   position: number;
@@ -95,6 +105,10 @@ export interface ResultsView {
   canReplay?: boolean;
   /** The track's name, for "3rd of your best laps on <track>". */
   trackName?: string;
+  /** How the whole field finished. */
+  standings?: StandingRow[];
+  /** The next track's name while it's still locked: a podium here opens it. */
+  lockedNext?: string;
 }
 
 /** A track's board on the Records screen. */
@@ -127,6 +141,8 @@ export interface SettingsView {
   colorMode: ColorMode;
   hudSize: HudSize;
   muted: boolean;
+  /** The frame rate is shown in the race HUD. */
+  showFps: boolean;
   bindings: BindRow[];
   /** True while a key capture is pending, and which action is being set. */
   rebinding: boolean;
@@ -359,6 +375,7 @@ export function garageHtml(m: UiModel): string {
     .join("");
 
   const car = m.cars.find((c) => c.selected);
+  const track = m.tracks.find((t) => t.selected);
   const switchCars = m.cars
     .map((c) => {
       const cls = ["mini-car", c.selected && "selected", !c.owned && "locked"]
@@ -379,6 +396,7 @@ export function garageHtml(m: UiModel): string {
           <button class="ghost" data-action="menu">◀ Menu</button>
           <span class="panel-title">${car ? esc(car.name) : "Garage"}</span>
           <span class="balance2">${m.credits} cr</span>
+          <button class="primary garage-race" data-action="start">▶ Race${track ? `<span class="garage-race-track"> · ${esc(track.name)}</span>` : ""}</button>
         </div>
         <div class="garage-body">
           <div class="garage-left">
@@ -445,18 +463,25 @@ export function resultsHtml(view: ResultsView): string {
     next === undefined
       ? ""
       : `<button class="${fresh ? "primary" : "ghost"}" data-action="nexttrack">Next: ${esc(next.name)} ▶</button>`;
+  // Off the podium with the next track still shut: say what opens it.
+  const shut =
+    view.lockedNext !== undefined && !outcome.cleared
+      ? `<div class="result-locked">Finish in the top 3 to unlock ${esc(view.lockedNext)}</div>`
+      : "";
   return `
     <div class="screen screen-results">
       <div class="panel results-panel">
         <div class="col-head">RACE RESULT</div>
         <div class="result-position">${p}</div>
         <div class="result-time">Best lap: <b>${timeStr}</b></div>
+        ${standingsHtml(view.standings)}
         <div class="reward">+ ${outcome.creditsEarned} cr</div>
         <div class="reward-parts">${esc(parts)}</div>
         ${record}
         ${board}
         ${unlocked}
         ${opened}
+        ${shut}
         <div class="results-actions">
           ${fresh ? onward + again("ghost") : again("primary") + onward}
           ${view.canReplay ? '<button class="ghost" data-action="replay">▶ Replay</button>' : ""}
@@ -465,6 +490,17 @@ export function resultsHtml(view: ResultsView): string {
         </div>
       </div>
     </div>`;
+}
+
+/** The finishing order: place, driver, and time or gap; your line marked. */
+function standingsHtml(rows: StandingRow[] = []): string {
+  if (rows.length < 2) return "";
+  return `<ol class="standings">${rows
+    .map(
+      (r) =>
+        `<li${r.you ? ' class="you"' : ""}><span>${r.place}</span><b>${esc(r.name)}</b><i>${esc(r.time)}</i></li>`,
+    )
+    .join("")}</ol>`;
 }
 
 // --- RECORDS ---------------------------------------------------------------
@@ -631,11 +667,12 @@ export function onboardingHtml(km: KeyMap): string {
          <div class="onboarding-body">
            <p class="no-touch"><b>Drive:</b> ${esc(controlsHint(km))}. Hold the handbrake through a corner to drift. A gamepad works too (stick, triggers, A to drift, Start to pause). On the menus, the arrows or d-pad move, Enter or A picks, Esc or B goes back.</p>
            <p class="touch-only"><b>Drive:</b> ◀ ▶ under your left thumb steer; GAS and BRAKE are on the right. Hold DRIFT through a corner to slide.</p>
-           <p><b>Race:</b> Go on the green light and complete the laps. Credits pay for finishing, more for a podium, and a bonus for a best lap under the track's par.</p>
+           <p><b>Corners:</b> Tyres only grip so hard. Too fast into a tight bend and the car slides wide into the wall, so brake before it and power out.</p>
+           <p><b>Race:</b> You start at the back of the grid: go on the green light and work your way past. Credits pay for finishing, more for a podium, and a bonus for a best lap under the track's par.</p>
            <p><b>Chase your ghost:</b> Once you've set a time, a ghost car replays your best lap; the timer shows how far ahead (−) or behind (+) you are.</p>
            <p><b>Earn → Upgrade → Go Faster:</b> Spend credits in the Garage on Engine, Tires, Brakes, Suspension, Aero, Chassis and Drift Kit — each changes real physics. Save up for faster car classes.</p>
            <p><b>Conditions:</b> Dirt and rain cost everyone grip — rain lengthens braking too, and dirt slides further. At night you race by headlight.</p>
-           <p><b>Progress:</b> Clear a track to unlock the next.</p>
+           <p><b>Progress:</b> Finish in the top 3 to unlock the next track.</p>
          </div>
          <div class="onboarding-actions">
            <button class="ghost" data-action="close-onboarding">◀ Menu</button>
@@ -688,6 +725,10 @@ export function settingsHtml(v: SettingsView): string {
                <div class="setting-row">
                  <span>Sound</span>
                  ${soundButton(v.muted)}
+               </div>
+               <div class="setting-row">
+                 <span>Show FPS</span>
+                 <button class="ghost" data-action="toggle-fps">${v.showFps ? "On" : "Off"}</button>
                </div>
              </div>
              <div class="setting-group">

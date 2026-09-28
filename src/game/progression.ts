@@ -45,6 +45,19 @@ export interface RewardBreakdown {
   podium: number;
 }
 
+/** A finish this high clears a track, opening the next: a podium. */
+export const CLEAR_POSITION = 3;
+
+/**
+ * Does this race clear its track? A podium finish does — beating at least
+ * one rival — and so does any finish racing alone.
+ */
+export function clears(result: RaceResult): boolean {
+  if (!result.finished) return false;
+  if ((result.fieldSize ?? 1) < 2) return true;
+  return (result.position ?? Infinity) <= CLEAR_POSITION;
+}
+
 export interface RaceOutcome {
   creditsEarned: number;
   breakdown: RewardBreakdown;
@@ -54,6 +67,8 @@ export interface RaceOutcome {
   oldBest: number;
   newBest: number;
   unlockedCar: string | null;
+  /** This race cleared the track (see `clears`). */
+  cleared: boolean;
   /** The next track in the ladder, if this race's first clear opened it. */
   unlockedTrack: string | null;
   /**
@@ -180,8 +195,8 @@ export class Progression {
 
   /**
    * Record a finished attempt: set the record if beaten, award credits, mark the
-   * track cleared, and surface any car class whose unlock threshold we just
-   * crossed. Returns the *summary* for the results screen.
+   * track cleared on a podium, and surface any car class whose unlock
+   * threshold we just crossed. Returns the *summary* for the results screen.
    */
   recordRace(result: RaceResult): RaceOutcome {
     const track = tracks.find((t) => t.id === result.trackId);
@@ -214,7 +229,8 @@ export class Progression {
       if (result.bestLapGhost !== undefined)
         this.data.bestGhosts[result.trackId] = result.bestLapGhost;
     }
-    const unlockedTrack = result.finished
+    const cleared = clears(result);
+    const unlockedTrack = cleared
       ? unlockedByClearing(tracks, this.data.clearedTracks, result.trackId)
       : null;
     const boardRank =
@@ -225,7 +241,7 @@ export class Progression {
             at: result.at ?? 0,
           })
         : null;
-    if (result.finished && !this.isTrackCleared(result.trackId)) {
+    if (cleared && !this.isTrackCleared(result.trackId)) {
       this.data.clearedTracks.push(result.trackId);
     }
 
@@ -237,6 +253,7 @@ export class Progression {
       oldBest,
       newBest,
       unlockedCar: this.detectUnlock(creditsBefore),
+      cleared,
       unlockedTrack,
       boardRank,
     };

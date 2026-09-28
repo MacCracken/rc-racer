@@ -24,6 +24,8 @@ export interface Settings {
   muted: boolean;
   /** How to Play has been seen, so first launch shows it once. */
   onboarded: boolean;
+  /** Frame rate in the race HUD (off unless wanted: it's a tuning aid). */
+  showFps: boolean;
 }
 
 /**
@@ -50,6 +52,7 @@ export function defaultSettings(): Settings {
     hudSize: "md",
     muted: false,
     onboarded: false,
+    showFps: false,
   };
 }
 
@@ -67,6 +70,7 @@ export function migrateSettings(input: unknown): Settings {
   }
   if (typeof raw.muted === "boolean") s.muted = raw.muted;
   if (typeof raw.onboarded === "boolean") s.onboarded = raw.onboarded;
+  if (typeof raw.showFps === "boolean") s.showFps = raw.showFps;
   return s;
 }
 

@@ -106,6 +106,32 @@ describe("RaceState lap detection", () => {
     expect(last).toBeCloseTo(2 * lapLength, 6);
   });
 
+  it("counts a gate a car slipped round the end of, once it's clearly by", () => {
+    const { track, race } = makeRace();
+    const g = track.gates[1]!;
+    // Round the outside of gate 1's end: never across its line.
+    const by = (along: number): Vec2 => ({
+      x: g.a.x + g.normal.x * 20 + g.tangent.x * along,
+      y: g.a.y + g.normal.y * 20 + g.tangent.y * along,
+    });
+    race.update(by(-12), by(-6));
+    race.update(by(-6), by(0));
+    expect(race.nextGate).toBe(1);
+    race.update(by(0), by(12));
+    expect(race.nextGate).toBe(1); // not yet clearly by
+    for (let s = 12; s < 60; s += 6) race.update(by(s), by(s + 6));
+    expect(race.nextGate).toBe(2);
+  });
+
+  it("ranks the grid front to back before the start line", () => {
+    const { track, race } = makeRace();
+    const cl = track.centerLine;
+    const back = (k: number): Vec2 => cl[(cl.length - k) % cl.length];
+    expect(race.lapProgress(back(0))).toBeCloseTo(0, 6);
+    expect(race.lapProgress(back(1))).toBeLessThan(0);
+    expect(race.lapProgress(back(2))).toBeLessThan(race.lapProgress(back(1)));
+  });
+
   it("does not bank a lap on a back-and-forth jiggle at a single gate", () => {
     const { track, race } = makeRace();
     const gate = track.gates[1]!;
@@ -137,15 +163,15 @@ describe("RaceState lap timing over a real per-tick physics feed", () => {
   // 1-3s error the frozen-prev bug produced.
   const TOL_MS = 800;
   const GOLDEN_BEST_MS: Record<string, number> = {
-    overture: 17725,
-    hairpin: 12000,
-    riverbend: 17467,
-    "gravel-pit": 16275,
-    clover: 17333,
-    "dust-bowl": 14617, // on dirt: less grip, a lower top end
-    monsoon: 18100,
-    slalom: 14450,
-    midnight: 16467,
+    overture: 17850,
+    hairpin: 12508,
+    riverbend: 18533,
+    "gravel-pit": 17450,
+    clover: 17783,
+    "dust-bowl": 15792, // on dirt: less grip, a lower top end
+    monsoon: 20600, // in the rain: slower through every bend
+    slalom: 16125,
+    midnight: 16950,
   };
 
   const sedanStats = applyBuild(
@@ -163,6 +189,7 @@ describe("RaceState lap timing over a real per-tick physics feed", () => {
     const driver = makeDriver(track, {
       pace: def.aiPace ?? 1,
       lookahead: 0.05,
+      car: stats,
     });
     let prev: Vec2 = { x: car.position.x, y: car.position.y };
     const cap = Math.ceil(90 / FIXED_DT);

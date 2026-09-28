@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { Progression } from "../../src/game/progression.ts";
+import {
+  CLEAR_POSITION,
+  clears,
+  Progression,
+} from "../../src/game/progression.ts";
+import { FINISH_PAY, LAP_PAY, PODIUM_BONUS } from "../../src/game/economy.ts";
+import { UPGRADE_TREE } from "../../src/game/upgrades.ts";
+import { overture } from "../../src/track/tracks.ts";
 import { MemorySaveStore, newSave, migrate } from "../../src/game/save.ts";
 import { recordLap } from "../../src/race/Ghost.ts";
 
@@ -143,6 +150,64 @@ describe("Progression — earn / spend / record", () => {
     expect(p.recordRace(race).unlockedTrack).toBeNull(); // already open
   });
 
+  it("against a field, only a podium clears a track and opens the next", () => {
+    const p = Progression.fresh();
+    const race = (position: number) => ({
+      trackId: "overture",
+      carId: "street-sedan",
+      laps: 3,
+      bestLapMs: 18000,
+      finished: true,
+      position,
+      fieldSize: 4,
+    });
+    const fourth = p.recordRace(race(CLEAR_POSITION + 1));
+    expect(fourth.cleared).toBe(false);
+    expect(fourth.unlockedTrack).toBeNull();
+    expect(fourth.creditsEarned).toBeGreaterThan(0); // finishing still pays
+    expect(p.isTrackCleared("overture")).toBe(false);
+    expect(p.isTrackUnlocked(1)).toBe(false);
+    const podium = p.recordRace(race(CLEAR_POSITION));
+    expect(podium.cleared).toBe(true);
+    expect(podium.unlockedTrack).toBe("hairpin");
+    expect(p.isTrackUnlocked(1)).toBe(true);
+    // Once cleared, a bad day there never closes the next track again.
+    p.recordRace(race(4));
+    expect(p.isTrackUnlocked(1)).toBe(true);
+  });
+
+  it("racing alone, any finish clears", () => {
+    expect(
+      clears({
+        trackId: "overture",
+        carId: "x",
+        laps: 3,
+        bestLapMs: 1,
+        finished: true,
+      }),
+    ).toBe(true);
+    expect(
+      clears({
+        trackId: "overture",
+        carId: "x",
+        laps: 3,
+        bestLapMs: 1,
+        finished: true,
+        position: 1,
+        fieldSize: 1,
+      }),
+    ).toBe(true);
+    expect(
+      clears({
+        trackId: "overture",
+        carId: "x",
+        laps: 3,
+        bestLapMs: 1,
+        finished: false,
+      }),
+    ).toBe(false);
+  });
+
   it("cannot select (and so race) a car it doesn't own", () => {
     const p = Progression.fresh();
     expect(p.selectCar("brawler")).toBe(false);
@@ -189,7 +254,8 @@ describe("Progression — upgrades", () => {
     const statsAfter = p.resolveStats("street-sedan");
     expect(statsAfter.maxSpeed).toBeGreaterThan(statsBefore.maxSpeed);
     expect(statsAfter.accel).toBeGreaterThan(statsBefore.accel);
-    expect(p.credits).toBe(500 - 120); // first engine tier costs 120
+    const engine = UPGRADE_TREE.find((u) => u.id === "engine")!;
+    expect(p.credits).toBe(500 - engine.tiers[0].cost);
   });
 
   it("cannot buy beyond the last tier", () => {
@@ -257,9 +323,10 @@ describe("Progression — the podium pays", () => {
   it("adds the podium bonus to the credits, itemised in the breakdown", () => {
     const p = Progression.fresh();
     const won = p.recordRace(race(1));
-    expect(won.breakdown).toEqual({ base: 84, pace: 0, podium: 40 });
-    expect(won.creditsEarned).toBe(124);
-    expect(p.credits).toBe(124);
+    const base = FINISH_PAY + 3 * LAP_PAY;
+    expect(won.breakdown).toEqual({ base, pace: 0, podium: PODIUM_BONUS[0] });
+    expect(won.creditsEarned).toBe(base + PODIUM_BONUS[0]);
+    expect(p.credits).toBe(base + PODIUM_BONUS[0]);
     expect(p.recordRace(race(4)).breakdown.podium).toBe(0);
     expect(p.recordRace(race()).breakdown.podium).toBe(0); // unknown position
   });
@@ -281,7 +348,9 @@ describe("Progression — the outcome names the par it paid against", () => {
       bestLapMs: 20000,
       finished: true,
     };
-    expect(p.recordRace({ ...race, trackId: "overture" }).parMs).toBe(18000);
+    expect(p.recordRace({ ...race, trackId: "overture" }).parMs).toBe(
+      overture.parLapMs,
+    );
     expect(p.recordRace({ ...race, trackId: "nowhere" }).parMs).toBe(4000);
   });
 });

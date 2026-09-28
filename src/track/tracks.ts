@@ -69,10 +69,10 @@ export const overture: TrackDef = {
     96,
   ),
   gateCount: 8,
-  parLapMs: 18000,
-  aiPace: 0.82,
+  parLapMs: 17500,
+  aiPace: 0.8,
   // Warm-up: stock sedans, detuned a touch.
-  rivals: { car: "street-sedan", tier: 0, factor: 0.92 },
+  rivals: { car: "street-sedan", tier: 0, factor: 0.9 },
 };
 
 // --- Hairpin: a tight, fast little loop for tighter-cornering cars. ---
@@ -94,8 +94,8 @@ export const hairpin: TrackDef = {
   ),
   gateCount: 6,
   parLapMs: 12000,
-  aiPace: 0.78,
-  rivals: { car: "street-sedan", tier: 0 },
+  aiPace: 0.8,
+  rivals: { car: "street-sedan", tier: 0, factor: 0.94 },
 };
 
 // --- Dust Bowl: a rough, narrow dirt oval. ---
@@ -117,9 +117,9 @@ export const dustBowl: TrackDef = {
     64,
   ),
   gateCount: 8,
-  parLapMs: 14500,
+  parLapMs: 15500,
   aiPace: 0.8,
-  rivals: { car: "brawler", tier: 0 },
+  rivals: { car: "brawler", tier: 1, factor: 0.85 },
 };
 
 // --- Gravel Pit: a loose dirt triangle. Long slides into one tight apex. ---
@@ -142,10 +142,11 @@ export const gravelPit: TrackDef = {
     };
   }, 104),
   gateCount: 8,
-  parLapMs: 16500,
+  parLapMs: 17000,
   aiPace: 0.8,
-  // Off-road buggies, detuned: an early upgrade or two gets a sedan past.
-  rivals: { car: "buggy", tier: 0, factor: 0.8 },
+  // Off-road buggies with a first upgrade, detuned: a stock sedan can scrape
+  // a podium; winning wants a buggy or a few parts.
+  rivals: { car: "buggy", tier: 1, factor: 0.84 },
 };
 
 // --- Monsoon: a square street circuit, soaked. Brake early for every corner. ---
@@ -171,9 +172,9 @@ export const monsoon: TrackDef = {
     };
   }, 120),
   gateCount: 10,
-  parLapMs: 18000,
+  parLapMs: 20000,
   aiPace: 0.8,
-  rivals: { car: "street-sedan", tier: 2 },
+  rivals: { car: "street-sedan", tier: 3, factor: 0.9 },
 };
 
 // --- Midnight: the finale, a flowing circuit with a hairpin, after dark. ---
@@ -199,7 +200,7 @@ export const midnight: TrackDef = {
   gateCount: 10,
   parLapMs: 16500,
   aiPace: 0.8,
-  rivals: { car: "brawler", tier: 1 },
+  rivals: { car: "brawler", tier: 2, factor: 1.01 },
 };
 
 // --- Riverbend: a big, flowing wavy oval. Wide, forgiving. ---
@@ -220,9 +221,9 @@ export const riverbend: TrackDef = {
     96,
   ),
   gateCount: 10,
-  parLapMs: 17000,
-  aiPace: 0.85,
-  rivals: { car: "street-sedan", tier: 1 },
+  parLapMs: 18000,
+  aiPace: 0.8,
+  rivals: { car: "street-sedan", tier: 1, factor: 1.01 },
 };
 
 // --- Clover: a three-lobe circuit. Mixed fast and tight. ---
@@ -243,10 +244,11 @@ export const clover: TrackDef = {
     96,
   ),
   gateCount: 9,
-  parLapMs: 17000,
+  parLapMs: 17500,
   aiPace: 0.8,
-  // Fast lobes suit buggies; detuned so a well-built sedan can still win.
-  rivals: { car: "buggy", tier: 0, factor: 0.86 },
+  // Fast lobes suit buggies: the first wall in the ladder, where a podium
+  // wants a buggy (or a well-built sedan).
+  rivals: { car: "buggy", tier: 1, factor: 0.86 },
 };
 
 // --- Slalom: a tight, high-frequency weave that punishes understeer. ---
@@ -267,15 +269,17 @@ export const slalom: TrackDef = {
     128,
   ),
   gateCount: 10,
-  parLapMs: 14000,
-  aiPace: 0.78,
-  rivals: { car: "street-sedan", tier: 2 },
+  parLapMs: 15500,
+  aiPace: 0.8,
+  rivals: { car: "buggy", tier: 2, factor: 0.91 },
 };
 
 /**
- * The ladder, in unlock order. Rival strength climbs along it: the sedan
- * build needed to win never drops from one track to the next (see
- * `Rivals.test.ts`), and the conditions tracks are spread through it.
+ * The ladder, in unlock order: a podium on one opens the next. Rival
+ * strength climbs along it, a breather now and then (see `Rivals.test.ts`):
+ * a stock sedan wins the warm-up, the finale takes a built car to win, and
+ * the conditions tracks are spread through it. Tuned with the autopilot
+ * racing each field (`npm run verify:tracks`).
  */
 export const tracks: TrackDef[] = [
   overture,
