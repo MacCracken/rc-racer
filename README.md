@@ -50,6 +50,7 @@ npm run e2e           # build, then browser smoke tests (Playwright/Chromium)
 npm run typecheck && npm run lint && npm run format:check
 npm run build         # production build to dist/
 npm run verify:tracks # autopilot every car on every track; times vs par
+npm run verify:career # whole careers, simulated: when each track opens, and falls
 ```
 
 CI runs the typecheck, lint, format check, unit tests, build and browser

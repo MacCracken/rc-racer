@@ -30,7 +30,10 @@ of these needs a person, a real device, or a decision.
       `parLapMs` / `rivals` in `track/tracks.ts`, `FIELD_SPREAD` in
       `game/rivals.ts`, the payouts in `game/economy.ts`, and the condition
       multipliers in `track/conditions.ts`. `npm run verify:tracks` runs the
-      autopilot everywhere, alone and against each field.
+      autopilot everywhere, alone and against each field, and
+      `npm run verify:career` plays whole careers to show when each track
+      opens and falls. (The autopilot's pace is a weak stand-in for skill:
+      car stats decide most of it.)
 - [ ] **60fps on a real low-end laptop.** Headless software-raster numbers are
       only a proxy (1080p holds 60, a 2× laptop panel ~35).
 - [ ] **A listen to the sound mix** — engine, squeal, chimes — and levels

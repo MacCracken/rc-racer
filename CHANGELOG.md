@@ -149,6 +149,10 @@ fresh `[Unreleased]` section opens above it. What's still to do lives in
 - `npm run verify:tracks`: runs the autopilot for every car on every track,
   under each track's conditions, and reports finish times and best laps
   against par, and where each stock car finishes against the track's field.
+- `npm run verify:career`: plays whole careers from a fresh save on the
+  autopilot, spending by three habits (saving for each car, a mix, or the
+  starter car only), and reports the race on which each track was first
+  cleared and first won. It fails if a habit can't clear every track.
 
 ### Changed
 

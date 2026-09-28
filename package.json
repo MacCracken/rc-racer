@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify:tracks": "vite build --ssr scripts/verify_tracks.ts --outDir node_modules/.cache/rc-racer-scripts --emptyOutDir --logLevel warn && node node_modules/.cache/rc-racer-scripts/verify_tracks.js"
+    "verify:tracks": "vite build --ssr scripts/verify_tracks.ts --outDir node_modules/.cache/rc-racer-scripts --emptyOutDir --logLevel warn && node node_modules/.cache/rc-racer-scripts/verify_tracks.js",
+    "verify:career": "vite build --ssr scripts/career.ts --outDir node_modules/.cache/rc-racer-scripts --emptyOutDir --logLevel warn && node node_modules/.cache/rc-racer-scripts/career.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
